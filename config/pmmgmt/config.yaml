@@ -1,0 +1,26 @@
+google:
+    calendar_prefs:
+        5h481e1g0978574sf69u8iovec@group:
+            calendar:
+                google:
+                    com: false
+        eb5u5ddb2t9unbjprkoue02390@group:
+            calendar:
+                google:
+                    com: true
+        it:
+            italian#holiday@group:
+                v:
+                    calendar:
+                        google:
+                            com: true
+        luca:
+            bocchiardi@gmail:
+                com: true
+    credentials_file: ~/.config/pmmgmt/gcal_credentials.json
+jira:
+    cache_ttl: 300
+storage:
+    db_path: /Users/luca/.local/share/pmmgmt/tasks.db
+ui:
+    palette: 0
