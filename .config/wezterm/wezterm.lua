@@ -22,7 +22,7 @@ config.keys = {
 	{
 		key = "w",
 		mods = "CMD",
-		action = wezterm.action.closeCurrentPane({ confirm = false }),
+		action = wezterm.action.CloseCurrentPane({ confirm = false }),
 	},
 	{
 		key = "d",
