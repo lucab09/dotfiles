@@ -15,7 +15,7 @@ Personal macOS config files managed via symlinks.
 ## Setup on a new machine
 
 ```bash
-git clone https://github.com/lucamezzatesta/dotfiles.git ~/dotfiles
+git clone https://github.com/lucab09/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 chmod +x setup.sh
 ./setup.sh
