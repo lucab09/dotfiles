@@ -26,13 +26,31 @@ elif pgrep -x "cvpnd" > /dev/null 2>&1; then
   AWS_COLOR=$GREEN
 fi
 
+# --- Corporate WiFi ---
+# SSID non leggibile su macOS 14+ senza Location Services; usiamo il gateway
+CORP_COLOR=$GREY
+CORP_GATEWAY="10.102.1.1"
+CURRENT_GATEWAY=$(netstat -rn 2>/dev/null | awk '/^default.*en0/{print $2; exit}')
+if [ "$CURRENT_GATEWAY" = "$CORP_GATEWAY" ]; then
+  CORP_COLOR=$GREEN
+fi
+
 # Aggiorna icone popup
 sketchybar --set vpn_tailscale icon.color=$TAILSCALE_COLOR label.color=$TAILSCALE_COLOR
 sketchybar --set vpn_nord      icon.color=$NORD_COLOR      label.color=$NORD_COLOR
 sketchybar --set vpn_aws       icon.color=$AWS_COLOR       label.color=$AWS_COLOR
+sketchybar --set vpn_corp      icon.color=$CORP_COLOR      label.color=$CORP_COLOR
+
+# Logo aziendale: visibile quando AWS VPN o Corp WiFi sono attivi
+if [ "$AWS_COLOR" = "$GREEN" ] || [ "$CORP_COLOR" = "$GREEN" ]; then
+  sketchybar --set vpn_logo drawing=on
+else
+  sketchybar --set vpn_logo drawing=off
+fi
 
 # Blink + bandiera quando connesso
-if [ "$TAILSCALE_COLOR" = "$GREEN" ] || [ "$NORD_COLOR" = "$GREEN" ] || [ "$AWS_COLOR" = "$GREEN" ]; then
+if [ "$TAILSCALE_COLOR" = "$GREEN" ] || [ "$NORD_COLOR" = "$GREEN" ] \
+   || [ "$AWS_COLOR" = "$GREEN" ] || [ "$CORP_COLOR" = "$GREEN" ]; then
 
   # Bandiera solo se NordVPN è connessa
   FLAG=""

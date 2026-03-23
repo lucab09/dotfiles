@@ -140,6 +140,16 @@ sketchybar --add item clock right \
              icon.color=0xff89b4fa \
              script="$PLUGIN_DIR/clock.sh"
 
+# Corporate logo (shown when on corporate WiFi or AWS VPN)
+sketchybar --add item vpn_logo right \
+           --set vpn_logo \
+             background.image.string="$CONFIG_DIR/images/corp_logo.png" \
+             background.image.scale=0.018 \
+             background.image.drawing=on \
+             background.drawing=on \
+             label.drawing=off \
+             drawing=off
+
 # VPN
 sketchybar --add item vpn right \
            --set vpn \
@@ -178,6 +188,13 @@ sketchybar --add item vpn_nord popup.vpn \
              label="NordVPN" \
              label.color=0xffcdd6f4 \
              click_script="open -a 'NordVPN'; sketchybar --set vpn popup.drawing=off"
+
+sketchybar --add item vpn_corp popup.vpn \
+           --set vpn_corp \
+             icon=󰀂 \
+             icon.color=0xffcdd6f4 \
+             label="Corporate WiFi" \
+             label.color=0xffcdd6f4
 
 # Batteria
 sketchybar --add item battery right \
