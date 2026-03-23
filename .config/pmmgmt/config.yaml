@@ -20,7 +20,8 @@ google:
     credentials_file: ~/.config/pmmgmt/gcal_credentials.json
 jira:
     cache_ttl: 300
+    project: PRD
 storage:
-    db_path: /Users/luca/.local/share/pmmgmt/tasks.db
+    db_path: ~/.local/share/pmmgmt/tasks.db
 ui:
     palette: 0
