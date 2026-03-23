@@ -1,0 +1,217 @@
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+
+##### Bar #####
+sketchybar --bar position=top \
+               height=36 \
+               blur_radius=30 \
+               color=0xbb1e2030 \
+               border_width=0 \
+               shadow=off \
+               margin=0 \
+               topmost=window
+
+##### Defaults #####
+sketchybar --default \
+  padding_left=4 \
+  padding_right=4 \
+  icon.font="JetBrainsMono Nerd Font:Bold:15.0" \
+  label.font="JetBrainsMono Nerd Font:Bold:13.0" \
+  icon.color=0xffcdd6f4 \
+  label.color=0xffcdd6f4 \
+  icon.padding_left=6 \
+  icon.padding_right=4 \
+  label.padding_left=0 \
+  label.padding_right=6 \
+  background.drawing=off
+
+##### LEFT #####
+
+# Logo Apple
+sketchybar --add item apple left \
+           --set apple \
+             icon= \
+             icon.color=0xffcdd6f4 \
+             icon.font="JetBrainsMono Nerd Font:Bold:16.0" \
+             icon.padding_left=8 \
+             icon.padding_right=8 \
+             label.drawing=off \
+             click_script="open -a 'System Settings'"
+
+# Spaces (workspace yabai)
+SPACE_ICONS=("1" "2" "3" "4" "5" "6" "7" "8" "9" "10")
+for i in "${!SPACE_ICONS[@]}"
+do
+  sid="$(($i+1))"
+  space=(
+    space="$sid"
+    icon="${SPACE_ICONS[i]}"
+    icon.font="JetBrainsMono Nerd Font:Bold:11.0"
+    icon.padding_left=7
+    icon.padding_right=7
+    label.drawing=off
+    background.drawing=on
+    background.color=0x44313244
+    background.corner_radius=10
+    background.height=20
+    script="$PLUGIN_DIR/space.sh"
+    click_script="yabai -m space --focus $sid 2>/dev/null"
+  )
+  sketchybar --add space space."$sid" left --set space."$sid" "${space[@]}"
+done
+
+# Separatore
+sketchybar --add item sep_left left \
+           --set sep_left \
+             icon= \
+             icon.color=0x44cdd6f4 \
+             icon.font="JetBrainsMono Nerd Font:Bold:10.0" \
+             label.drawing=off \
+             padding_left=2 \
+             padding_right=2
+
+# Meteo
+sketchybar --add item weather left \
+           --set weather \
+             update_freq=900 \
+             icon=󰖐 \
+             icon.color=0xff89dceb \
+             label.color=0xffcdd6f4 \
+             script="$PLUGIN_DIR/weather.sh"
+
+# Git recent repos
+sketchybar --add item git left \
+           --set git \
+             update_freq=60 \
+             icon= \
+             icon.color=0xffcdd6f4 \
+             label="git" \
+             label.color=0xffcdd6f4 \
+             script="$PLUGIN_DIR/git_repos.sh" \
+             click_script="sketchybar --set git popup.drawing=toggle" \
+             popup.background.color=0xbb1e2030 \
+             popup.background.corner_radius=8 \
+             popup.background.border_width=1 \
+             popup.background.border_color=0x44cdd6f4
+
+for i in 0 1 2 3 4 5 6 7 8 9; do
+  sketchybar --add item git_repo_$i popup.git \
+             --set git_repo_$i \
+               icon=󰳐 \
+               icon.color=0xffcdd6f4 \
+               label="..." \
+               label.color=0xffcdd6f4 \
+               drawing=off
+done
+
+# Timezone widget
+sketchybar --add item timezone left \
+           --set timezone \
+             icon=󰥔 \
+             icon.color=0xffcdd6f4 \
+             label="tz" \
+             label.color=0xffcdd6f4 \
+             click_script="$PLUGIN_DIR/timezone.sh"
+
+##### CENTER #####
+
+sketchybar --add item front_app center \
+           --set front_app \
+             icon.font="JetBrainsMono Nerd Font:Bold:14.0" \
+             icon.color=0xff89b4fa \
+             icon.padding_left=8 \
+             label.color=0xffcdd6f4 \
+             label.font="JetBrainsMono Nerd Font:Bold:13.0" \
+             label.padding_right=8 \
+             background.drawing=on \
+             background.color=0x33cdd6f4 \
+             background.corner_radius=10 \
+             background.height=24 \
+             script="$PLUGIN_DIR/front_app.sh" \
+           --subscribe front_app front_app_switched
+
+##### RIGHT #####
+# (aggiunto in ordine inverso: il primo sarà più a destra)
+
+# Data
+sketchybar --add item clock right \
+           --set clock \
+             update_freq=10 \
+             icon=󱑂 \
+             icon.color=0xff89b4fa \
+             script="$PLUGIN_DIR/clock.sh"
+
+# VPN
+sketchybar --add item vpn right \
+           --set vpn \
+             update_freq=1 \
+             icon=󰖂 \
+             icon.color=0xffcdd6f4 \
+             label="VPN" \
+             label.color=0xffcdd6f4 \
+             script="$PLUGIN_DIR/vpn.sh" \
+             click_script="sketchybar --set vpn popup.drawing=toggle" \
+             popup.background.color=0xbb1e2030 \
+             popup.background.corner_radius=8 \
+             popup.background.border_width=1 \
+             popup.background.border_color=0x44cdd6f4
+
+sketchybar --add item vpn_aws popup.vpn \
+           --set vpn_aws \
+             icon=󰸏 \
+             icon.color=0xffcdd6f4 \
+             label="AWS VPN Client" \
+             label.color=0xffcdd6f4 \
+             click_script="open -a 'AWS VPN Client'; sketchybar --set vpn popup.drawing=off"
+
+sketchybar --add item vpn_tailscale popup.vpn \
+           --set vpn_tailscale \
+             icon=󰒄 \
+             icon.color=0xffcdd6f4 \
+             label="Tailscale" \
+             label.color=0xffcdd6f4 \
+             click_script="open -a 'Tailscale'; sketchybar --set vpn popup.drawing=off"
+
+sketchybar --add item vpn_nord popup.vpn \
+           --set vpn_nord \
+             icon=󰯄 \
+             icon.color=0xffcdd6f4 \
+             label="NordVPN" \
+             label.color=0xffcdd6f4 \
+             click_script="open -a 'NordVPN'; sketchybar --set vpn popup.drawing=off"
+
+# Batteria
+sketchybar --add item battery right \
+           --set battery \
+             update_freq=60 \
+             icon.color=0xffa6e3a1 \
+             script="$PLUGIN_DIR/battery.sh" \
+           --subscribe battery system_woke power_source_change
+
+# Volume
+sketchybar --add item volume right \
+           --set volume \
+             icon.color=0xffcdd6f4 \
+             script="$PLUGIN_DIR/volume.sh" \
+           --subscribe volume volume_change
+
+# Todo (pmmgmt)
+sketchybar --add item todo right \
+           --set todo \
+             update_freq=60 \
+             icon= \
+             icon.color=0xffcdd6f4 \
+             label.color=0xffcdd6f4 \
+             script="$PLUGIN_DIR/todo.sh" \
+             click_script="/Applications/WezTerm.app/Contents/MacOS/wezterm start --cwd $HOME/Github/pmmgmt -- bash -c 'go run .'"
+
+# Slack
+sketchybar --add item slack right \
+           --set slack \
+             update_freq=30 \
+             icon= \
+             icon.color=0xffcdd6f4 \
+             label.color=0xffcdd6f4 \
+             script="$PLUGIN_DIR/slack.sh" \
+             click_script="open -a 'Slack'"
+
+sketchybar --update

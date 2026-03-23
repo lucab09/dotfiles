@@ -1,0 +1,14 @@
+[
+  {
+    "photo" : "",
+    "location" : "New York, Stati Uniti",
+    "timezone" : "America\/New_York",
+    "name" : "John"
+  },
+  {
+    "photo" : "\/Users\/luca\/.config\/sketchybar\/tz_photos\/person_1774053636.png",
+    "location" : "Napoli, Italia",
+    "timezone" : "Europe\/Rome",
+    "name" : "Napoli"
+  }
+]
