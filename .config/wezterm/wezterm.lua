@@ -15,6 +15,11 @@ config = {
 
 config.keys = {
 	{
+		key = "s",
+		mods = "CMD",
+		action = wezterm.action.SendString("\x13"), -- Ctrl+s → Neovim save
+	},
+	{
 		key = "d",
 		mods = "CMD",
 		action = wezterm.action.SplitHorizontal({ domain = "CurrentPaneDomain" }),
