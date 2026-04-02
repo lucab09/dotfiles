@@ -3,11 +3,12 @@ PLUGIN_DIR="$CONFIG_DIR/plugins"
 ##### Bar #####
 sketchybar --bar position=top \
                height=36 \
-               blur_radius=30 \
-               color=0xbb1e2030 \
+               blur_radius=0 \
+               color=0x00000000 \
                border_width=0 \
                shadow=off \
-               margin=0 \
+               margin=10 \
+               y_offset=6 \
                topmost=window
 
 ##### Defaults #####
@@ -15,14 +16,17 @@ sketchybar --default \
   padding_left=4 \
   padding_right=4 \
   icon.font="JetBrainsMono Nerd Font:Bold:15.0" \
-  label.font="JetBrainsMono Nerd Font:Bold:13.0" \
+  label.font="Google Sans:Bold:15.0" \
   icon.color=0xffcdd6f4 \
   label.color=0xffcdd6f4 \
-  icon.padding_left=6 \
+  icon.padding_left=8 \
   icon.padding_right=4 \
   label.padding_left=0 \
-  label.padding_right=6 \
-  background.drawing=off
+  label.padding_right=8 \
+  background.drawing=on \
+  background.color=0xff313244 \
+  background.corner_radius=14 \
+  background.height=28
 
 ##### LEFT #####
 
@@ -35,6 +39,7 @@ sketchybar --add item apple left \
              icon.padding_left=8 \
              icon.padding_right=8 \
              label.drawing=off \
+             background.drawing=off \
              click_script="open -a 'System Settings'"
 
 # Spaces (workspace yabai)
@@ -66,17 +71,25 @@ sketchybar --add item sep_left left \
              icon.color=0x44cdd6f4 \
              icon.font="JetBrainsMono Nerd Font:Bold:10.0" \
              label.drawing=off \
+             background.drawing=off \
              padding_left=2 \
              padding_right=2
 
-# Meteo
-sketchybar --add item weather left \
-           --set weather \
-             update_freq=900 \
-             icon=󰖐 \
-             icon.color=0xff89dceb \
+# Front App (spostata da center)
+sketchybar --add item front_app left \
+           --set front_app \
+             icon.font="JetBrainsMono Nerd Font:Bold:14.0" \
+             icon.color=0xff89b4fa \
+             icon.padding_left=8 \
              label.color=0xffcdd6f4 \
-             script="$PLUGIN_DIR/weather.sh"
+             label.font="JetBrainsMono Nerd Font:Bold:13.0" \
+             label.padding_right=8 \
+             background.drawing=on \
+             background.color=0x33cdd6f4 \
+             background.corner_radius=10 \
+             background.height=24 \
+             script="$PLUGIN_DIR/front_app.sh" \
+           --subscribe front_app front_app_switched
 
 # Git recent repos
 sketchybar --add item git left \
@@ -114,31 +127,45 @@ sketchybar --add item timezone left \
 
 ##### CENTER #####
 
-sketchybar --add item front_app center \
-           --set front_app \
-             icon.font="JetBrainsMono Nerd Font:Bold:14.0" \
-             icon.color=0xff89b4fa \
+# Ora (icon, in alto) + Data (label, in basso) — stesso item, stacked verticalmente
+sketchybar --add item clock_stack center \
+           --set clock_stack \
+             update_freq=1 \
+             icon.font="Google Sans:Bold:14.0" \
+             icon.color=0xffcdd6f4 \
+             icon.y_offset=4 \
              icon.padding_left=8 \
-             label.color=0xffcdd6f4 \
-             label.font="JetBrainsMono Nerd Font:Bold:13.0" \
+             icon.padding_right=4 \
+             icon.width=110 \
+             label.font="Google Sans:Bold:11.0" \
+             label.color=0xff89b4fa \
+             label.y_offset=-10 \
+             label.padding_left=-105 \
              label.padding_right=8 \
+             background.drawing=off \
+             script="$PLUGIN_DIR/clock_combined.sh"
+
+# Meteo (destra del pill)
+sketchybar --add item weather center \
+           --set weather \
+             update_freq=900 \
+             icon=󰖐 \
+             icon.color=0xff89dceb \
+             label.color=0xffcdd6f4 \
+             background.drawing=off \
+             script="$PLUGIN_DIR/weather.sh" \
+             click_script="$PLUGIN_DIR/weather_set_location.sh"
+
+# Pill scuro che raggruppa i due elementi
+sketchybar --add bracket center_pill clock_stack weather \
+           --set center_pill \
              background.drawing=on \
-             background.color=0x33cdd6f4 \
-             background.corner_radius=10 \
-             background.height=24 \
-             script="$PLUGIN_DIR/front_app.sh" \
-           --subscribe front_app front_app_switched
+             background.color=0xff313244 \
+             background.corner_radius=14 \
+             background.height=34
 
 ##### RIGHT #####
 # (aggiunto in ordine inverso: il primo sarà più a destra)
-
-# Data
-sketchybar --add item clock right \
-           --set clock \
-             update_freq=10 \
-             icon=󱑂 \
-             icon.color=0xff89b4fa \
-             script="$PLUGIN_DIR/clock.sh"
 
 # Corporate logo (shown when on corporate WiFi or AWS VPN)
 sketchybar --add item vpn_logo right \
@@ -154,9 +181,9 @@ sketchybar --add item vpn_logo right \
 sketchybar --add item vpn right \
            --set vpn \
              update_freq=1 \
-             icon=󰖂 \
+             icon=󰖩 \
              icon.color=0xffcdd6f4 \
-             label="VPN" \
+             label="Network" \
              label.color=0xffcdd6f4 \
              script="$PLUGIN_DIR/vpn.sh" \
              click_script="sketchybar --set vpn popup.drawing=toggle" \
@@ -216,8 +243,8 @@ sketchybar --add item todo right \
            --set todo \
              update_freq=60 \
              icon= \
-             icon.color=0xffcdd6f4 \
-             label.color=0xffcdd6f4 \
+             icon.color=0xfffb938f \
+             label.color=0xfffb938f \
              script="$PLUGIN_DIR/todo.sh" \
              click_script="/Applications/WezTerm.app/Contents/MacOS/wezterm start --cwd $HOME/Github/pmmgmt -- bash -c 'go run .'"
 
@@ -226,8 +253,8 @@ sketchybar --add item slack right \
            --set slack \
              update_freq=30 \
              icon= \
-             icon.color=0xffcdd6f4 \
-             label.color=0xffcdd6f4 \
+             icon.color=0xfffb8500 \
+             label.color=0xfffb8500 \
              script="$PLUGIN_DIR/slack.sh" \
              click_script="open -a 'Slack'"
 

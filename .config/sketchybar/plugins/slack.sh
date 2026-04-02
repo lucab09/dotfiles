@@ -22,7 +22,7 @@ if [ -z "$COUNT" ]; then
 fi
 
 if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
-  sketchybar --set "$NAME" icon.color=0xffcdd6f4 label.drawing=off
+  sketchybar --set "$NAME" icon.color=0xfffb8500 label.drawing=off
 else
-  sketchybar --set "$NAME" icon.color=0xfffb938f label.drawing=on label="$COUNT"
+  sketchybar --set "$NAME" icon.color=0xfffb8500 label.drawing=on label="$COUNT"
 fi

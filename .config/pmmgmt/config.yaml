@@ -24,4 +24,4 @@ jira:
 storage:
     db_path: ~/.local/share/pmmgmt/tasks.db
 ui:
-    palette: 0
+    palette: 2
