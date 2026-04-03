@@ -21,8 +21,8 @@ if [ -z "$COUNT" ]; then
   ' 2>/dev/null)
 fi
 
-if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
-  sketchybar --set "$NAME" icon.color=0xfffb8500 label.drawing=off
+if [ -z "$COUNT" ] || [ "$COUNT" = "null" ] || [ "$COUNT" = "missing value" ]; then
+  sketchybar --set "$NAME" icon.color=0xfffb8500 label.drawing=on label="·"
 else
   sketchybar --set "$NAME" icon.color=0xfffb8500 label.drawing=on label="$COUNT"
 fi

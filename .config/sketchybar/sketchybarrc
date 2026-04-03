@@ -186,42 +186,7 @@ sketchybar --add item vpn right \
              label="Network" \
              label.color=0xffcdd6f4 \
              script="$PLUGIN_DIR/vpn.sh" \
-             click_script="sketchybar --set vpn popup.drawing=toggle" \
-             popup.background.color=0xbb1e2030 \
-             popup.background.corner_radius=8 \
-             popup.background.border_width=1 \
-             popup.background.border_color=0x44cdd6f4
-
-sketchybar --add item vpn_aws popup.vpn \
-           --set vpn_aws \
-             icon=󰸏 \
-             icon.color=0xffcdd6f4 \
-             label="AWS VPN Client" \
-             label.color=0xffcdd6f4 \
-             click_script="open -a 'AWS VPN Client'; sketchybar --set vpn popup.drawing=off"
-
-sketchybar --add item vpn_tailscale popup.vpn \
-           --set vpn_tailscale \
-             icon=󰒄 \
-             icon.color=0xffcdd6f4 \
-             label="Tailscale" \
-             label.color=0xffcdd6f4 \
-             click_script="open -a 'Tailscale'; sketchybar --set vpn popup.drawing=off"
-
-sketchybar --add item vpn_nord popup.vpn \
-           --set vpn_nord \
-             icon=󰯄 \
-             icon.color=0xffcdd6f4 \
-             label="NordVPN" \
-             label.color=0xffcdd6f4 \
-             click_script="open -a 'NordVPN'; sketchybar --set vpn popup.drawing=off"
-
-sketchybar --add item vpn_corp popup.vpn \
-           --set vpn_corp \
-             icon=󰀂 \
-             icon.color=0xffcdd6f4 \
-             label="Corporate WiFi" \
-             label.color=0xffcdd6f4
+             click_script="echo 'toggle \$POPUP_CLICK_X \$POPUP_CLICK_Y' | nc -U /tmp/network_popup.sock 2>/dev/null || true"
 
 # Batteria
 sketchybar --add item battery right \
@@ -259,3 +224,10 @@ sketchybar --add item slack right \
              click_script="open -a 'Slack'"
 
 sketchybar --update
+
+# Avvia/riavvia network popup
+if [ -f /tmp/network_popup.pid ]; then
+  kill "$(cat /tmp/network_popup.pid)" 2>/dev/null
+fi
+"$PLUGIN_DIR/network_popup" &
+echo $! > /tmp/network_popup.pid

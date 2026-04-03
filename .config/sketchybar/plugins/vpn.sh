@@ -24,13 +24,26 @@ done <<EOF
 $(networksetup -listallhardwareports 2>/dev/null)
 EOF
 
-# --- WiFi SSID ---
-SSID=$(networksetup -getairportnetwork en0 2>/dev/null | sed 's/Current Wi-Fi Network: //')
-if echo "$SSID" | grep -qi "not associated\|You are not"; then
-  SSID=$(networksetup -getairportnetwork en1 2>/dev/null | sed 's/Current Wi-Fi Network: //')
-fi
-if echo "$SSID" | grep -qi "not associated\|You are not\|Error"; then
-  SSID=""
+# --- WiFi SSID (via scutil CachedScanRecord, nessun permesso richiesto, cached 60s) ---
+SSID_CACHE_FILE="/tmp/sketchybar_ssid_cache"
+if [ ! -f "$SSID_CACHE_FILE" ] || [ -n "$(find "$SSID_CACHE_FILE" -mmin +1 2>/dev/null)" ]; then
+  SSID=$(python3 - << 'PYEOF'
+import subprocess, plistlib, re
+out = subprocess.run(['scutil'], input='open\nshow State:/Network/Interface/en0/AirPort\n', capture_output=True, text=True).stdout
+m = re.search(r'CachedScanRecord : <data> 0x([0-9a-f]+)', out)
+if not m:
+    print(""); exit()
+objects = plistlib.loads(bytes.fromhex(m.group(1)))['$objects']
+is_key  = re.compile(r'^[A-Z0-9][A-Z0-9_]*$')
+is_uuid = re.compile(r'^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$')
+candidates = [o for o in objects if isinstance(o, str) and not is_key.match(o) and not is_uuid.match(o) and ':' not in o and 1 <= len(o) <= 32 and o not in ('$null','root')]
+print(candidates[0] if candidates else "")
+PYEOF
+)
+  if [ -z "$SSID" ]; then SSID="WiFi"; fi
+  echo "$SSID" > "$SSID_CACHE_FILE"
+else
+  SSID=$(cat "$SSID_CACHE_FILE")
 fi
 
 # --- Tailscale ---
@@ -46,28 +59,17 @@ NORD_CONNECTED=$(defaults read com.nordvpn.macos isAppWasConnectedToVPN 2>/dev/n
 
 # --- AWS VPN Client ---
 AWS_ACTIVE=0
-if scutil --nc list 2>/dev/null | grep -i "AWS\|Cisco\|anyconnect" | grep -qi "(Connected)"; then
+UPLOG="/Library/Application Support/AWSVPNClient/UpLog.txt"
+DOWNLOG="/Library/Application Support/AWSVPNClient/DownLog.txt"
+if [ -f "$UPLOG" ] && [ -f "$DOWNLOG" ] && [ "$UPLOG" -nt "$DOWNLOG" ]; then
   AWS_ACTIVE=1
-elif pgrep -x "cvpnd" > /dev/null 2>&1; then
+elif [ -f "$UPLOG" ] && [ ! -f "$DOWNLOG" ]; then
   AWS_ACTIVE=1
 fi
 
 # --- Corporate WiFi ---
 CORP_ACTIVE=0
-CORP_GATEWAY="10.102.1.1"
-CURRENT_GATEWAY=$(netstat -rn 2>/dev/null | awk '/^default.*en0/{print $2; exit}')
-[ "$CURRENT_GATEWAY" = "$CORP_GATEWAY" ] && CORP_ACTIVE=1
-
-# Update popup item colors
-TAILSCALE_COLOR=$GREY; [ "$TAILSCALE_ACTIVE" = "1" ] && TAILSCALE_COLOR=$GREEN
-NORD_COLOR=$GREY;      [ "$NORD_ACTIVE"      = "1" ] && NORD_COLOR=$GREEN
-AWS_COLOR=$GREY;       [ "$AWS_ACTIVE"        = "1" ] && AWS_COLOR=$GREEN
-CORP_COLOR=$GREY;      [ "$CORP_ACTIVE"       = "1" ] && CORP_COLOR=$GREEN
-
-sketchybar --set vpn_tailscale icon.color=$TAILSCALE_COLOR label.color=$TAILSCALE_COLOR
-sketchybar --set vpn_nord      icon.color=$NORD_COLOR      label.color=$NORD_COLOR
-sketchybar --set vpn_aws       icon.color=$AWS_COLOR       label.color=$AWS_COLOR
-sketchybar --set vpn_corp      icon.color=$CORP_COLOR      label.color=$CORP_COLOR
+[ "$SSID" = "qbc-ent" ] && CORP_ACTIVE=1
 
 # Corp logo image: only for corp WiFi
 if [ "$CORP_ACTIVE" = "1" ]; then
@@ -75,6 +77,13 @@ if [ "$CORP_ACTIVE" = "1" ]; then
 else
   sketchybar --set vpn_logo drawing=off
 fi
+
+# Push state to network popup app (fire-and-forget, silent if not running)
+WIFI_ENABLED=1
+networksetup -getairportpower en0 2>/dev/null | grep -q "Off" && WIFI_ENABLED=0
+SSID_ENCODED=$(echo "$SSID" | sed 's/ /%20/g')
+echo "state ssid=$SSID_ENCODED wifi=$WIFI_ENABLED tailscale=$TAILSCALE_ACTIVE nord=$NORD_ACTIVE aws=$AWS_ACTIVE corp=$CORP_ACTIVE" \
+  | nc -U /tmp/network_popup.sock 2>/dev/null || true
 
 ANY_VPN=$(( TAILSCALE_ACTIVE + NORD_ACTIVE + AWS_ACTIVE + CORP_ACTIVE ))
 
