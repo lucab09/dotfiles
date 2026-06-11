@@ -32,22 +32,22 @@ if [ -z "$TEMP" ]; then
   exit 0
 fi
 
-# Map WMO weather code → Nerd Font icon (nf-md-weather_*)
+# Map WMO weather code → Material Symbols Rounded icon name
 # is_day=1 → day icons, is_day=0 → night variants for clear/partly
 case "$CODE" in
-  0)           [ "$IS_DAY" = "1" ] && ICON="󰖙" || ICON="󰖔" ;;  # clear
-  1)           [ "$IS_DAY" = "1" ] && ICON="󰖕" || ICON="󰖔" ;;  # mainly clear
-  2)           ICON="󰖕" ;;                                       # partly cloudy
-  3)           ICON="󰖐" ;;                                       # overcast
-  45|48)       ICON="󰖑" ;;                                       # fog
-  51|53|55)    ICON="󰖖" ;;                                       # drizzle
-  61|63|65)    ICON="󰖗" ;;                                       # rain
-  66|67)       ICON="󰖗" ;;                                       # freezing rain
-  71|73|75|77) ICON="󰼶" ;;                                       # snow
-  80|81|82)    ICON="󰖗" ;;                                       # showers
-  85|86)       ICON="󰼶" ;;                                       # snow showers
-  95|96|99)    ICON="󰖓" ;;                                       # thunderstorm
-  *)           ICON="󰖐" ;;
+  0)           [ "$IS_DAY" = "1" ] && ICON="sunny"              || ICON="bedtime" ;;        # clear
+  1)           [ "$IS_DAY" = "1" ] && ICON="partly_cloudy_day"  || ICON="partly_cloudy_night" ;;  # mainly clear
+  2)           [ "$IS_DAY" = "1" ] && ICON="partly_cloudy_day"  || ICON="partly_cloudy_night" ;;  # partly cloudy
+  3)           ICON="cloud" ;;                                                               # overcast
+  45|48)       ICON="foggy" ;;                                                              # fog
+  51|53|55)    ICON="rainy" ;;                                                              # drizzle
+  61|63|65)    ICON="rainy" ;;                                                              # rain
+  66|67)       ICON="weather_mix" ;;                                                        # freezing rain
+  71|73|75|77) ICON="weather_snowy" ;;                                                      # snow
+  80|81|82)    ICON="rainy" ;;                                                              # showers
+  85|86)       ICON="cloudy_snowing" ;;                                                     # snow showers
+  95|96|99)    ICON="thunderstorm" ;;                                                       # thunderstorm
+  *)           ICON="cloud" ;;
 esac
 
 # Label: temperature · city (if saved)

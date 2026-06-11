@@ -26,4 +26,14 @@ done
 # starship.toml (file, not dir)
 symlink "$DOTFILES/.config/starship.toml" "$CONFIG/starship.toml"
 
+# Compile sketchybar Swift binaries
+SKETCHYBAR_PLUGINS="$DOTFILES/.config/sketchybar/plugins"
+for swift_file in "$SKETCHYBAR_PLUGINS"/*.swift; do
+    binary="${swift_file%.swift}"
+    echo "  compiling: $(basename "$binary")"
+    swiftc -O "$swift_file" -o "$binary" -framework Cocoa -framework SwiftUI 2>&1 \
+        && echo "  ok: $(basename "$binary")" \
+        || echo "  FAILED: $(basename "$binary") (swiftc error above)"
+done
+
 echo "Done."

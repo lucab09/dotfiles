@@ -1,8 +1,9 @@
 #!/bin/sh
 
-GREEN=0xffa6e3a1
-GREY=0xffcdd6f4
-COLOR1=0xff219ebc
+COLOR_DEFAULT=0xffe6e1e5
+COLOR_MUTED=0xffcac4d0
+COLOR_VPN=0xff79d491
+COLOR_VPN_BLINK=0x4479d491
 BLINK_STATE_FILE=/tmp/sketchybar_vpn_blink
 FLAG_CACHE_FILE=/tmp/sketchybar_vpn_flag
 
@@ -24,7 +25,7 @@ done <<EOF
 $(networksetup -listallhardwareports 2>/dev/null)
 EOF
 
-# --- WiFi SSID (via scutil CachedScanRecord, nessun permesso richiesto, cached 60s) ---
+# --- WiFi SSID (cached 1 min) ---
 SSID_CACHE_FILE="/tmp/sketchybar_ssid_cache"
 if [ ! -f "$SSID_CACHE_FILE" ] || [ -n "$(find "$SSID_CACHE_FILE" -mmin +1 2>/dev/null)" ]; then
   SSID=$(python3 - << 'PYEOF'
@@ -71,14 +72,13 @@ fi
 CORP_ACTIVE=0
 [ "$SSID" = "qbc-ent" ] && CORP_ACTIVE=1
 
-# Corp logo image: only for corp WiFi
 if [ "$CORP_ACTIVE" = "1" ]; then
   sketchybar --set vpn_logo drawing=on
 else
   sketchybar --set vpn_logo drawing=off
 fi
 
-# Push state to network popup app (fire-and-forget, silent if not running)
+# Push state to network popup
 WIFI_ENABLED=1
 networksetup -getairportpower en0 2>/dev/null | grep -q "Off" && WIFI_ENABLED=0
 SSID_ENCODED=$(echo "$SSID" | sed 's/ /%20/g')
@@ -87,24 +87,24 @@ echo "state ssid=$SSID_ENCODED wifi=$WIFI_ENABLED tailscale=$TAILSCALE_ACTIVE no
 
 ANY_VPN=$(( TAILSCALE_ACTIVE + NORD_ACTIVE + AWS_ACTIVE + CORP_ACTIVE ))
 
-# --- Icon: LAN takes priority over WiFi ---
+# --- Icon: LAN > WiFi ---
 if [ "$LAN_ACTIVE" = "1" ]; then
-  ICON="󰈀"   # ethernet cable
+  ICON="cable"
   BASE_LABEL="LAN"
 elif [ -n "$SSID" ]; then
-  ICON="󰖩"   # wifi
+  ICON="wifi"
   BASE_LABEL="$SSID"
 else
-  ICON="󰖪"   # wifi off
+  ICON="wifi_off"
   BASE_LABEL="No network"
 fi
 
 # --- VPN badge suffix ---
 BADGE=""
 if [ "$TAILSCALE_ACTIVE" = "1" ]; then
-  BADGE="  󰒄"
+  BADGE=" · TS"
 elif [ "$AWS_ACTIVE" = "1" ]; then
-  BADGE="  󰸏"
+  BADGE=" · AWS"
 elif [ "$NORD_ACTIVE" = "1" ]; then
   if [ ! -f "$FLAG_CACHE_FILE" ] || [ "$(find "$FLAG_CACHE_FILE" -mmin +1 2>/dev/null)" ]; then
     COUNTRY_CODE=$(curl -s --max-time 3 "http://ip-api.com/json" | python3 -c "
@@ -125,22 +125,21 @@ print(chr(0x1F1E6 + ord(cc[0]) - ord('A')) + chr(0x1F1E6 + ord(cc[1]) - ord('A')
   else
     FLAG=$(cat "$FLAG_CACHE_FILE")
   fi
-  BADGE="  $FLAG"
+  BADGE=" · $FLAG"
 fi
 
 LABEL="${BASE_LABEL}${BADGE}"
 
 if [ "$ANY_VPN" -gt 0 ]; then
-  sketchybar --set "$NAME" icon="$ICON" label="$LABEL" label.color=$GREEN
-
+  sketchybar --set "$NAME" icon="$ICON" label="$LABEL" label.color=$COLOR_VPN
   if [ -f "$BLINK_STATE_FILE" ]; then
     rm "$BLINK_STATE_FILE"
-    sketchybar --set "$NAME" icon.color=$GREEN
+    sketchybar --set "$NAME" icon.color=$COLOR_VPN
   else
     touch "$BLINK_STATE_FILE"
-    sketchybar --set "$NAME" icon.color=0x44a6e3a1
+    sketchybar --set "$NAME" icon.color=$COLOR_VPN_BLINK
   fi
 else
   rm -f "$BLINK_STATE_FILE" "$FLAG_CACHE_FILE"
-  sketchybar --set "$NAME" icon="$ICON" label="$LABEL" label.color=$COLOR1 icon.color=$COLOR1
+  sketchybar --set "$NAME" icon="$ICON" label="$LABEL" icon.color=$COLOR_DEFAULT label.color=$COLOR_DEFAULT
 fi
