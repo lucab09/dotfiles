@@ -257,26 +257,6 @@ sketchybar --add bracket right_pill volume battery \
              background.corner_radius=16 \
              background.height=34
 
-# Todo (pmmgmt)
-sketchybar --add item todo right \
-           --set todo \
-             update_freq=60 \
-             icon= \
-             icon.color=0xfffb938f \
-             label.color=0xfffb938f \
-             script="$PLUGIN_DIR/todo.sh" \
-             click_script="/Applications/WezTerm.app/Contents/MacOS/wezterm start --cwd $HOME/Github/pmmgmt -- bash -c 'go run .'"
-
-# Slack
-sketchybar --add item slack right \
-           --set slack \
-             update_freq=30 \
-             icon= \
-             icon.color=0xfffb8500 \
-             label.color=0xfffb8500 \
-             script="$PLUGIN_DIR/slack.sh" \
-             click_script="open -a 'Slack'"
-
 sketchybar --update
 
 # Avvia/riavvia network popup
