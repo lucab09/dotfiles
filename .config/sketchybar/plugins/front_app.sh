@@ -21,7 +21,6 @@ if [ "$SENDER" = "front_app_switched" ]; then
     "Spotify")               ICON="" ;;
     "Mail")                  ICON="󰇮" ;;
     "Messages")              ICON="󰍦" ;;
-    "Slack")                 ICON="󰒱" ;;
     "Discord")               ICON="󰙯" ;;
     "Notion")                ICON="" ;;
     "Obsidian")              ICON="" ;;

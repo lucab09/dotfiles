@@ -7,7 +7,9 @@ sketchybar --bar position=top \
                color=0x00000000 \
                border_width=0 \
                shadow=off \
-               margin=10 \
+               margin=8 \
+               padding_left=0 \
+               padding_right=0 \
                y_offset=8 \
                topmost=window
 
@@ -91,95 +93,115 @@ sketchybar --add item front_app left \
              script="$PLUGIN_DIR/front_app.sh" \
            --subscribe front_app front_app_switched
 
-# Git recent repos
-sketchybar --add item git left \
-           --set git \
-             update_freq=60 \
-             icon= \
-             icon.color=0xffcdd6f4 \
-             label="git" \
-             label.color=0xffcdd6f4 \
-             script="$PLUGIN_DIR/git_repos.sh" \
-             click_script="sketchybar --set git popup.drawing=toggle" \
-             popup.background.color=0xbb1e2030 \
-             popup.background.corner_radius=8 \
-             popup.background.border_width=1 \
-             popup.background.border_color=0x44cdd6f4
-
-for i in 0 1 2 3 4 5 6 7 8 9; do
-  sketchybar --add item git_repo_$i popup.git \
-             --set git_repo_$i \
-               icon=󰳐 \
-               icon.color=0xffcdd6f4 \
-               label="..." \
-               label.color=0xffcdd6f4 \
-               drawing=off
-done
-
-# Timezone widget
-sketchybar --add item timezone left \
-           --set timezone \
-             icon=󰥔 \
-             icon.color=0xffcdd6f4 \
-             label="tz" \
-             label.color=0xffcdd6f4 \
-             click_script="$PLUGIN_DIR/timezone.sh"
-
 ##### CENTER #####
 
-# Data — MD3 Label Large, on-surface-variant
-sketchybar --add item clock_date center \
-           --set clock_date \
-             update_freq=60 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.font="Google Sans:Regular:14.0" \
-             label.color=0xffcac4d0 \
-             label.padding_left=12 \
-             label.padding_right=4 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/clock_date.sh"
+HAS_NOTCH=$("$PLUGIN_DIR/has_notch" 2>/dev/null)
 
-# Orario — MD3 Title Medium, on-surface
-sketchybar --add item clock_time center \
-           --set clock_time \
-             update_freq=30 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.font="Google Sans:Medium:16.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=4 \
-             label.padding_right=4 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/clock_time.sh"
+if [ "$HAS_NOTCH" = "1" ]; then
+  # Ora — a sinistra del notch (MD3 Title Medium, on-surface), pill propria
+  sketchybar --add item clock_time q \
+             --set clock_time \
+               update_freq=30 \
+               icon.drawing=off \
+               label.font="Google Sans:Medium:16.0" \
+               label.color=0xffe6e1e5 \
+               label.padding_left=12 \
+               label.padding_right=12 \
+               background.drawing=on \
+               background.color=0xff49454f \
+               background.corner_radius=16 \
+               background.height=34 \
+               script="$PLUGIN_DIR/clock_time.sh"
 
-# Meteo — MD3 on-surface-variant icon, on-surface label
-sketchybar --add item weather center \
-           --set weather \
-             update_freq=900 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.font="Material Symbols Rounded:Regular:14.0" \
-             icon.color=0xffcac4d0 \
-             icon.padding_left=8 \
-             icon.padding_right=4 \
-             label.font="Google Sans:Regular:14.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=0 \
-             label.padding_right=12 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/weather.sh" \
-             click_script="$PLUGIN_DIR/weather_set_location.sh"
+  # Data — a destra del notch (MD3 Label Large, on-surface-variant)
+  sketchybar --add item clock_date e \
+             --set clock_date \
+               update_freq=60 \
+               icon.drawing=off \
+               label.font="Google Sans:Medium:14.0" \
+               label.color=0xffcac4d0 \
+               label.padding_left=12 \
+               label.padding_right=4 \
+               background.drawing=off \
+               script="$PLUGIN_DIR/clock_date.sh"
 
-# Pill MD3 surface-variant che raggruppa i tre elementi
-sketchybar --add bracket center_pill clock_time clock_date weather \
-           --set center_pill \
-             background.drawing=on \
-             background.color=0xff49454f \
-             background.corner_radius=16 \
-             background.height=34
+  # Meteo — a destra del notch, assieme alla data
+  sketchybar --add item weather e \
+             --set weather \
+               update_freq=900 \
+               icon.font="Material Symbols Rounded:Regular:14.0" \
+               icon.color=0xffcac4d0 \
+               icon.padding_left=8 \
+               icon.padding_right=4 \
+               label.font="Google Sans:Medium:14.0" \
+               label.color=0xffe6e1e5 \
+               label.padding_left=0 \
+               label.padding_right=12 \
+               background.drawing=off \
+               script="$PLUGIN_DIR/weather.sh" \
+               click_script="$PLUGIN_DIR/weather_set_location.sh"
+
+  sketchybar --add bracket notch_right_pill clock_date weather \
+             --set notch_right_pill \
+               background.drawing=on \
+               background.color=0xff49454f \
+               background.corner_radius=16 \
+               background.height=34
+else
+  # Data — MD3 Label Large, on-surface-variant
+  sketchybar --add item clock_date center \
+             --set clock_date \
+               update_freq=60 \
+               padding_left=0 \
+               padding_right=0 \
+               icon.drawing=off \
+               label.font="Google Sans:Medium:14.0" \
+               label.color=0xffcac4d0 \
+               label.padding_left=12 \
+               label.padding_right=4 \
+               background.drawing=off \
+               script="$PLUGIN_DIR/clock_date.sh"
+
+  # Orario — MD3 Title Medium, on-surface
+  sketchybar --add item clock_time center \
+             --set clock_time \
+               update_freq=30 \
+               padding_left=0 \
+               padding_right=0 \
+               icon.drawing=off \
+               label.font="Google Sans:Medium:16.0" \
+               label.color=0xffe6e1e5 \
+               label.padding_left=4 \
+               label.padding_right=4 \
+               background.drawing=off \
+               script="$PLUGIN_DIR/clock_time.sh"
+
+  # Meteo — MD3 on-surface-variant icon, on-surface label
+  sketchybar --add item weather center \
+             --set weather \
+               update_freq=900 \
+               padding_left=0 \
+               padding_right=0 \
+               icon.font="Material Symbols Rounded:Regular:14.0" \
+               icon.color=0xffcac4d0 \
+               icon.padding_left=8 \
+               icon.padding_right=4 \
+               label.font="Google Sans:Medium:14.0" \
+               label.color=0xffe6e1e5 \
+               label.padding_left=0 \
+               label.padding_right=12 \
+               background.drawing=off \
+               script="$PLUGIN_DIR/weather.sh" \
+               click_script="$PLUGIN_DIR/weather_set_location.sh"
+
+  # Pill MD3 surface-variant che raggruppa i tre elementi
+  sketchybar --add bracket center_pill clock_time clock_date weather \
+             --set center_pill \
+               background.drawing=on \
+               background.color=0xff49454f \
+               background.corner_radius=16 \
+               background.height=34
+fi
 
 ##### RIGHT #####
 # (aggiunto in ordine inverso: il primo sarà più a destra)
@@ -203,7 +225,7 @@ sketchybar --add item vpn right \
              icon.color=0xffe6e1e5 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="Google Sans:Regular:14.0" \
+             label.font="Google Sans:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -224,7 +246,7 @@ sketchybar --add item battery right \
              icon.color=0xffcac4d0 \
              icon.padding_left=4 \
              icon.padding_right=4 \
-             label.font="Google Sans:Regular:14.0" \
+             label.font="Google Sans:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -241,7 +263,7 @@ sketchybar --add item volume right \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="Google Sans:Regular:14.0" \
+             label.font="Google Sans:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=4 \
