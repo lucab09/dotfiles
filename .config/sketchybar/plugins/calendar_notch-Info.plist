@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.lucab09.sketchybar.calendar-notch</string>
+    <key>CFBundleName</key>
+    <string>Calendar Notch</string>
+    <key>CFBundleExecutable</key>
+    <string>calendar_notch</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Mostra gli eventi del giorno selezionato nel widget del notch.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>Mostra le immagini profilo degli invitati agli eventi.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Apre in Calendar l'evento selezionato dal widget del notch.</string>
+</dict>
+</plist>

@@ -242,3 +242,16 @@ if [ -f /tmp/network_popup.pid ]; then
 fi
 "$PLUGIN_DIR/network_popup" &
 echo $! > /tmp/network_popup.pid
+
+# Avvia il calendario del notch solo sui display compatibili
+CALENDAR_NOTCH_PID=/tmp/calendar_notch.pid
+if [ -f "$CALENDAR_NOTCH_PID" ]; then
+  kill "$(cat "$CALENDAR_NOTCH_PID")" 2>/dev/null
+  rm -f "$CALENDAR_NOTCH_PID"
+fi
+
+HAS_NOTCH=$("$PLUGIN_DIR/has_notch" 2>/dev/null)
+if [ "$HAS_NOTCH" = "1" ] && [ -x "$PLUGIN_DIR/calendar_notch" ]; then
+  "$PLUGIN_DIR/calendar_notch" &
+  echo $! > "$CALENDAR_NOTCH_PID"
+fi
