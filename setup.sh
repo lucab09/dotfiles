@@ -34,7 +34,7 @@ for swift_file in "$SKETCHYBAR_PLUGINS"/*.swift; do
     compile_args=(-O "$swift_file" -o "$binary" -framework Cocoa -framework SwiftUI)
 
     if [ "$(basename "$swift_file")" = "calendar_notch.swift" ]; then
-        compile_args+=(-framework EventKit -framework Contacts)
+        compile_args+=(-framework EventKit -framework Contacts -framework CryptoKit -framework Network -framework Security)
     fi
 
     if [ -f "$info_plist" ]; then
