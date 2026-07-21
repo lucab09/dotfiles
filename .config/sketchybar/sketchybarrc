@@ -52,7 +52,7 @@ sketchybar --add item clock_date left \
            --set clock_date \
              update_freq=60 \
              icon.drawing=off \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffcac4d0 \
              label.padding_left=12 \
              label.padding_right=12 \
@@ -68,11 +68,11 @@ sketchybar --add item weather left \
              update_freq=900 \
              padding_left=0 \
              padding_right=0 \
-             icon.font="Material Symbols Rounded:Regular:14.0" \
+             icon.font="Material Symbols Rounded:Regular:18.0" \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=6 \
@@ -119,7 +119,7 @@ if [ "$HAS_NOTCH" != "1" ]; then
                icon.color=0x44cdd6f4 \
                icon.padding_left=12 \
                icon.padding_right=6 \
-               label.font="Google Sans Flex 18pt:Medium:14.0" \
+               label.font="Google Sans Flex 18pt:Medium:16.0" \
                label.color=0xffe6e1e5 \
                label.padding_left=0 \
                label.padding_right=12 \
@@ -155,7 +155,7 @@ sketchybar --add item vpn right \
              icon.color=0xffe6e1e5 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -187,7 +187,7 @@ sketchybar --add item mem right \
              icon.color=0xffcac4d0 \
              icon.padding_left=2 \
              icon.padding_right=3 \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -202,7 +202,7 @@ sketchybar --add item cpu right \
              icon.color=0xffcac4d0 \
              icon.padding_left=2 \
              icon.padding_right=3 \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=4 \
@@ -218,7 +218,7 @@ sketchybar --add item gpu right \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=3 \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=4 \
@@ -251,7 +251,7 @@ sketchybar --add item battery right \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
