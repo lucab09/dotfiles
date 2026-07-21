@@ -32,35 +32,65 @@ sketchybar --default \
 
 ##### LEFT #####
 
-# Orario — primo elemento della barra
-sketchybar --add item clock_time left \
-           --set clock_time \
-             update_freq=30 \
+# Spaziatura uniforme dal bordo sinistro dello schermo (stesso trattamento
+# dei gap a spaziatore usati sul lato destro).
+sketchybar --add item left_gap_edge left \
+           --set left_gap_edge \
+             width=8 \
+             padding_left=0 \
+             padding_right=0 \
+             icon.drawing=off \
+             label.drawing=off \
+             background.drawing=off
+
+# Data — primo elemento della barra, occupa il lato sinistro della pillola
+sketchybar --add item clock_date left \
+           --set clock_date \
+             update_freq=60 \
+             padding_left=0 \
+             padding_right=0 \
              icon.drawing=off \
              label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=12 \
-             label.padding_right=12 \
+             label.padding_right=6 \
+             background.drawing=off \
+             script="$PLUGIN_DIR/clock_date.sh"
+
+# Ora — chip arancione dentro la stessa pillola della data (stesso
+# trattamento dell'AQI dentro il widget meteo).
+sketchybar --add item clock_time left \
+           --set clock_time \
+             update_freq=30 \
+             padding_left=4 \
+             padding_right=8 \
+             icon.drawing=off \
+             label.font="Google Sans Flex 18pt:Bold:14.0" \
+             label.color=0xfff2a65a \
+             label.padding_left=10 \
+             label.padding_right=10 \
              background.drawing=on \
-             background.color=0xff49454f \
-             background.corner_radius=16 \
-             background.height=34 \
+             background.color=0x29f2a65a \
+             background.corner_radius=10 \
+             background.height=22 \
              script="$PLUGIN_DIR/clock_time.sh"
 
-# Data — subito dopo l'orologio
-sketchybar --add item clock_date left \
-           --set clock_date \
-             update_freq=60 \
-             icon.drawing=off \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffcac4d0 \
-             label.padding_left=12 \
-             label.padding_right=12 \
+sketchybar --add bracket clock_pill clock_date clock_time \
+           --set clock_pill \
              background.drawing=on \
              background.color=0xff49454f \
              background.corner_radius=16 \
-             background.height=34 \
-             script="$PLUGIN_DIR/clock_date.sh"
+             background.height=34
+
+# Spaziatura uniforme tra la pillola data/ora e il widget meteo
+sketchybar --add item left_gap_weather left \
+           --set left_gap_weather \
+             width=8 \
+             padding_left=0 \
+             padding_right=0 \
+             icon.drawing=off \
+             label.drawing=off \
+             background.drawing=off
 
 # Meteo — subito dopo la data
 sketchybar --add item weather left \
