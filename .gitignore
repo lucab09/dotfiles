@@ -7,3 +7,5 @@
 .config/sketchybar/plugins/calendar_notch
 .config/sketchybar/plugins/has_notch
 .config/sketchybar/plugins/network_popup
+.config/sketchybar/plugins/geolocate
+.config/sketchybar/plugins/Geolocate.app

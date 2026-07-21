@@ -122,34 +122,55 @@ install_oauth_config() {
 
 compile_swift_plugins() {
     local plugins="$DOTFILES/.config/sketchybar/plugins"
-    local swift_file binary info_plist bundle_id signing_identity
+    local swift_file binary info_plist bundle_id signing_identity name app_bundle
     local -a compile_args
+
+    signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development:/{print $2; exit}')"
+    signing_identity="${signing_identity:--}"
 
     shopt -s nullglob
     for swift_file in "$plugins"/*.swift; do
+        name="$(basename "${swift_file%.swift}")"
         binary="${swift_file%.swift}"
         info_plist="${swift_file%.swift}-Info.plist"
         compile_args=(-O "$swift_file" -o "$binary" -framework Cocoa -framework SwiftUI)
 
-        if [ "$(basename "$swift_file")" = "calendar_notch.swift" ]; then
+        if [ "$name" = "calendar_notch" ]; then
             compile_args+=(-framework EventKit -framework Contacts -framework CryptoKit -framework Network -framework Security)
+        fi
+
+        if [ "$name" = "geolocate" ]; then
+            compile_args+=(-framework CoreLocation)
         fi
 
         if [ -f "$info_plist" ]; then
             compile_args+=(-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$info_plist")
         fi
 
-        echo "  compiling: $(basename "$binary")"
+        echo "  compiling: $name"
         swiftc "${compile_args[@]}"
 
         if [ -f "$info_plist" ]; then
             bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")"
-            signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development:/{print $2; exit}')"
-            signing_identity="${signing_identity:--}"
             codesign --force --sign "$signing_identity" --identifier "$bundle_id" "$binary"
             codesign --verify --strict "$binary"
         fi
-        echo "  ok: $(basename "$binary")"
+
+        # geolocate deve girare come vera .app (via `open`): un binario nudo
+        # eredita il processo "responsabile" TCC di chi lo lancia e il prompt
+        # di autorizzazione Location Services non compare mai.
+        if [ "$name" = "geolocate" ]; then
+            app_bundle="$plugins/Geolocate.app"
+            rm -rf "$app_bundle"
+            mkdir -p "$app_bundle/Contents/MacOS"
+            cp "$binary" "$app_bundle/Contents/MacOS/geolocate"
+            cp "$info_plist" "$app_bundle/Contents/Info.plist"
+            codesign --force --sign "$signing_identity" --identifier "$bundle_id" "$app_bundle"
+            codesign --verify --strict "$app_bundle"
+            echo "  ok: Geolocate.app"
+        fi
+
+        echo "  ok: $name"
     done
 }
 
