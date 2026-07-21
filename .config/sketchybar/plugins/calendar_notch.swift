@@ -1471,7 +1471,8 @@ struct GoogleAccountsSettingsView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "person.2.badge.gearshape")
-                .font(.system(size: 24, weight: .medium))
+                .font(.custom("Google Sans Flex 18pt", size: 24))
+                .fontWeight(.medium)
                 .foregroundStyle(accent)
                 .frame(width: 42, height: 42)
                 .background(surface)
@@ -1479,10 +1480,11 @@ struct GoogleAccountsSettingsView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Account Google")
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 20))
+                    .fontWeight(.semibold)
                     .foregroundStyle(primaryText)
                 Text("Gestisci gli account usati per rispondere agli inviti.")
-                    .font(.system(size: 12))
+                    .font(.custom("Google Sans Flex 18pt", size: 12))
                     .foregroundStyle(secondaryText)
             }
         }
@@ -1493,13 +1495,14 @@ struct GoogleAccountsSettingsView: View {
         if model.accounts.isEmpty {
             VStack(spacing: 9) {
                 Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.system(size: 28))
+                    .font(.custom("Google Sans Flex 18pt", size: 28))
                     .foregroundStyle(secondaryText)
                 Text("Nessun account collegato")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 14))
+                    .fontWeight(.semibold)
                     .foregroundStyle(primaryText)
                 Text("Collega un account Google per rispondere agli inviti di Calendar.")
-                    .font(.system(size: 12))
+                    .font(.custom("Google Sans Flex 18pt", size: 12))
                     .foregroundStyle(secondaryText)
                     .multilineTextAlignment(.center)
             }
@@ -1524,10 +1527,11 @@ struct GoogleAccountsSettingsView: View {
                 .foregroundStyle(Color.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Account richiesto")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.custom("Google Sans Flex 18pt", size: 12))
+                    .fontWeight(.semibold)
                     .foregroundStyle(primaryText)
                 Text(email)
-                    .font(.system(size: 11))
+                    .font(.custom("Google Sans Flex 18pt", size: 11))
                     .foregroundStyle(secondaryText)
             }
             Spacer()
@@ -1547,14 +1551,16 @@ struct GoogleAccountsSettingsView: View {
                 .fill(Color.white.opacity(0.08))
                 .overlay {
                     Text("G")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.custom("Google Sans Flex 18pt", size: 13))
+                        .fontWeight(.bold)
                         .foregroundStyle(primaryText)
                 }
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.email)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.custom("Google Sans Flex 18pt", size: 13))
+                    .fontWeight(.medium)
                     .foregroundStyle(primaryText)
                     .lineLimit(1)
                 accountStatus(account.connectionState)
@@ -1624,7 +1630,8 @@ struct GoogleAccountsSettingsView: View {
             }
             .buttonStyle(.borderless)
         }
-        .font(.system(size: 11, weight: .medium))
+        .font(.custom("Google Sans Flex 18pt", size: 11))
+        .fontWeight(.medium)
         .foregroundStyle(Color.red.opacity(0.9))
         .padding(10)
         .background(Color.red.opacity(0.1))
@@ -1638,16 +1645,19 @@ struct GoogleAccountsSettingsView: View {
 
             VStack(spacing: 13) {
                 Image(systemName: "person.crop.circle.badge.minus")
-                    .font(.system(size: 26, weight: .medium))
+                    .font(.custom("Google Sans Flex 18pt", size: 26))
+                    .fontWeight(.medium)
                     .foregroundStyle(Color.red)
                 Text("Disconnettere l’account?")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 16))
+                    .fontWeight(.semibold)
                     .foregroundStyle(primaryText)
                 Text(email)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.custom("Google Sans Flex 18pt", size: 12))
+                    .fontWeight(.medium)
                     .foregroundStyle(secondaryText)
                 Text("Dovrai autorizzarlo di nuovo per rispondere ai relativi inviti.")
-                    .font(.system(size: 11))
+                    .font(.custom("Google Sans Flex 18pt", size: 11))
                     .foregroundStyle(secondaryText)
                     .multilineTextAlignment(.center)
 
@@ -1751,6 +1761,7 @@ struct CalendarEventViewModel: Identifiable {
     let isAllDay: Bool
     let location: String?
     let calendarColor: Color
+    let calendarColorHex: String
     let attendees: [CalendarAttendeeViewModel]
     let meetingLink: MeetingLinkViewModel?
     let currentUserParticipantEmail: String?
@@ -2021,13 +2032,221 @@ final class GoogleCalendarClient {
     }
 }
 
+private func hexString(_ color: NSColor) -> String {
+    let rgb = color.usingColorSpace(.deviceRGB) ?? NSColor(red: 0.53, green: 0.71, blue: 0.98, alpha: 1)
+    let r = Int((rgb.redComponent * 255).rounded())
+    let g = Int((rgb.greenComponent * 255).rounded())
+    let b = Int((rgb.blueComponent * 255).rounded())
+    return String(format: "0xff%02x%02x%02x", r, g, b)
+}
+
+/// Percorso letto dall'item sketchybar `calendar_center` sui Mac senza notch fisico.
+private let sketchybarStateURL = URL(fileURLWithPath: "/tmp/sketchybar_calendar_state.json")
+
+// MARK: - Caricamento eventi fuori dal main thread
+//
+// EventKit e Contacts fanno query sincrone e potenzialmente lente (una per
+// invitato per evento). Sono raggruppate in funzioni libere, senza isolamento
+// d'attore, così `CalendarModel.refresh()` può eseguirle su un task in
+// background invece di bloccare il main thread (e quindi le animazioni della UI)
+// ogni volta che si cambia giorno.
+
+private func detectedURLs(in text: String?) -> [URL] {
+    guard let text, !text.isEmpty,
+          let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
+    let range = NSRange(text.startIndex..<text.endIndex, in: text)
+    return detector.matches(in: text, range: range).compactMap(\.url)
+}
+
+private func meetingLink(for event: EKEvent) -> MeetingLinkViewModel? {
+    var candidates: [(field: String, url: URL)] = []
+    if let url = event.url { candidates.append(("url", url)) }
+    candidates += detectedURLs(in: event.location).map { ("location", $0) }
+    candidates += detectedURLs(in: event.structuredLocation?.title).map { ("structuredLocation", $0) }
+    candidates += detectedURLs(in: event.notes).map { ("notes", $0) }
+
+    for candidate in candidates {
+        let host = (candidate.url.host ?? "").lowercased()
+        let scheme = (candidate.url.scheme ?? "").lowercased()
+        let provider: MeetingProvider?
+        if host == "meet.google.com" || host.hasSuffix(".meet.google.com") {
+            provider = .googleMeet
+        } else if host == "zoom.us" || host.hasSuffix(".zoom.us") ||
+                    host == "zoomgov.com" || host.hasSuffix(".zoomgov.com") ||
+                    scheme.hasPrefix("zoom") {
+            provider = .zoom
+        } else if host == "teams.microsoft.com" || host.hasSuffix(".teams.microsoft.com") ||
+                    host == "teams.live.com" || host.hasSuffix(".teams.live.com") ||
+                    host == "teams.cloud.microsoft" || host.hasSuffix(".teams.cloud.microsoft") ||
+                    scheme == "msteams" {
+            provider = .microsoftTeams
+        } else {
+            provider = nil
+        }
+
+        if let provider {
+            return MeetingLinkViewModel(provider: provider, url: candidate.url, sourceField: candidate.field)
+        }
+    }
+    return nil
+}
+
+private func participantEmail(for participant: EKParticipant) -> String? {
+    guard participant.url.scheme?.lowercased() == "mailto" else { return nil }
+    let rawValue = participant.url.absoluteString
+        .replacingOccurrences(of: "mailto:", with: "", options: [.caseInsensitive, .anchored])
+    let decoded = rawValue.removingPercentEncoding ?? rawValue
+    let candidate = decoded.split(separator: "?", maxSplits: 1).first.map(String.init) ?? decoded
+    return normalizedEmailForPhotoMatch(candidate)
+}
+
+private func normalizedEmailForPhotoMatch(_ value: String) -> String? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized.contains("@") ? normalized : nil
+}
+
+private func normalizedPhoneForPhotoMatch(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let isInternational = trimmed.hasPrefix("+") || trimmed.hasPrefix("00")
+    var digits = trimmed.filter(\.isNumber)
+    if trimmed.hasPrefix("00"), digits.hasPrefix("00") {
+        digits.removeFirst(2)
+    }
+    guard digits.count >= 8 else { return nil }
+    return isInternational ? "+\(digits)" : digits
+}
+
+private func matchingContact(for participant: EKParticipant, contactStore: CNContactStore) -> CNContact? {
+    guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return nil }
+    let keys: [CNKeyDescriptor] = [
+        CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
+        CNContactThumbnailImageDataKey as CNKeyDescriptor,
+        CNContactEmailAddressesKey as CNKeyDescriptor,
+        CNContactPhoneNumbersKey as CNKeyDescriptor
+    ]
+    return try? contactStore
+        .unifiedContacts(matching: participant.contactPredicate, keysToFetch: keys)
+        .first
+}
+
+private func attendeeViewModels(for event: EKEvent, contactStore: CNContactStore) -> [CalendarAttendeeViewModel] {
+    let attendees = (event.attendees ?? []).filter {
+        !$0.isCurrentUser && $0.participantType == .person
+    }
+    guard !attendees.isEmpty else { return [] }
+
+    return attendees.enumerated().map { index, participant in
+        let contact = matchingContact(for: participant, contactStore: contactStore)
+        let participantName = participant.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contactName = contact.flatMap { CNContactFormatter.string(from: $0, style: .fullName) }
+        let eventKitEmail = participantEmail(for: participant)
+        let contactEmail = contact?.emailAddresses.lazy
+            .map { String($0.value) }
+            .compactMap(normalizedEmailForPhotoMatch)
+            .first
+        let email = eventKitEmail ?? contactEmail
+        let phoneNumbers = Set((contact?.phoneNumbers ?? []).compactMap {
+            normalizedPhoneForPhotoMatch($0.value.stringValue)
+        }).sorted()
+        let fallbackName = email ?? participant.url.absoluteString
+        let name = contactName?.isEmpty == false
+            ? contactName!
+            : (participantName?.isEmpty == false ? participantName! : fallbackName)
+
+        return CalendarAttendeeViewModel(
+            id: "\(participant.url.absoluteString)-\(index)",
+            name: name,
+            email: email,
+            phoneNumbers: phoneNumbers,
+            googleImageData: nil,
+            appleImageData: contact?.thumbnailImageData
+        )
+    }
+}
+
+/// Risultato del caricamento eventi in background: gli eventi mappati e le
+/// chiavi di override RSVP ormai allineate allo stato nativo (da rimuovere
+/// sul main actor, dato che `rsvpOverrides` vive lì).
+private struct LoadedEvents {
+    let events: [CalendarEventViewModel]
+    let clearedOverrideKeys: [String]
+}
+
+private func loadEvents(
+    on day: Date,
+    eventStore: EKEventStore,
+    contactStore: CNContactStore,
+    rsvpOverrides: [String: RSVPStatus]
+) -> LoadedEvents {
+    let calendar = Calendar.current
+    let start = calendar.startOfDay(for: day)
+    guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
+        return LoadedEvents(events: [], clearedOverrideKeys: [])
+    }
+    let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: nil)
+
+    var clearedKeys: [String] = []
+    let viewModels = eventStore.events(matching: predicate)
+        .map { event -> CalendarEventViewModel in
+            let eventIdentifier = event.eventIdentifier ?? UUID().uuidString
+            let externalIdentifier = event.calendarItemExternalIdentifier ?? eventIdentifier
+            let nsColor = NSColor(cgColor: event.calendar.cgColor) ?? .systemBlue
+            let currentParticipant = event.attendees?.first(where: \.isCurrentUser)
+            let nativeRSVPStatus = currentParticipant.map { RSVPStatus($0.participantStatus) } ?? .needsAction
+            let lookupKey = "\(externalIdentifier)-\(event.startDate.timeIntervalSince1970)"
+            let effectiveRSVPStatus: RSVPStatus
+            if let override = rsvpOverrides[lookupKey] {
+                effectiveRSVPStatus = override
+                if override == nativeRSVPStatus { clearedKeys.append(lookupKey) }
+            } else {
+                effectiveRSVPStatus = nativeRSVPStatus
+            }
+            let participantEmail = currentParticipant.flatMap(participantEmail(for:))
+            return CalendarEventViewModel(
+                id: "\(eventIdentifier)-\(event.startDate.timeIntervalSince1970)",
+                eventIdentifier: eventIdentifier,
+                externalIdentifier: externalIdentifier,
+                title: event.title?.isEmpty == false ? event.title! : "Evento senza titolo",
+                startDate: event.startDate,
+                endDate: event.endDate,
+                isAllDay: event.isAllDay,
+                location: event.location?.isEmpty == false ? event.location : nil,
+                calendarColor: Color(nsColor: nsColor),
+                calendarColorHex: hexString(nsColor),
+                attendees: attendeeViewModels(for: event, contactStore: contactStore),
+                meetingLink: meetingLink(for: event),
+                currentUserParticipantEmail: participantEmail,
+                rsvpStatus: effectiveRSVPStatus,
+                canRespond: currentParticipant != nil,
+                rsvpLookupKey: lookupKey
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay }
+            return lhs.startDate < rhs.startDate
+        }
+    return LoadedEvents(events: viewModels, clearedOverrideKeys: clearedKeys)
+}
+
 @MainActor
 final class CalendarModel: ObservableObject {
     @Published var authorizationState: CalendarAuthorizationState = .notDetermined
     @Published var events: [CalendarEventViewModel] = []
     @Published var displayedDate = Date()
     @Published var rsvpStates: [String: RSVPUpdateState] = [:]
+    @Published private(set) var now = Date()
+    private var todayEvents: [CalendarEventViewModel] = []
 
+    /// Evento in corso adesso (per il widget collassato quando non c'è un notch fisico).
+    /// Calcolato sempre sugli eventi di *oggi*, indipendentemente dal giorno mostrato
+    /// nella vista espansa (`displayedDate`), così navigare il calendario non lo altera.
+    var currentEvent: CalendarEventViewModel? {
+        todayEvents
+            .filter { !$0.isAllDay && $0.startDate <= now && $0.endDate > now }
+            .min { $0.endDate < $1.endDate }
+    }
+
+    private var nowTimer: Timer?
     private let eventStore = EKEventStore()
     private let contactStore = CNContactStore()
     private let googleOAuthManager: GoogleOAuthManager
@@ -2040,6 +2259,7 @@ final class CalendarModel: ObservableObject {
     private var accessRequestStarted = false
     private var contactsAccessRequestStarted = false
     private var lastKnownToday = Calendar.current.startOfDay(for: Date())
+    private var eventLoadGeneration = 0
 
     init(
         googleOAuthManager: GoogleOAuthManager,
@@ -2055,11 +2275,38 @@ final class CalendarModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        nowTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.now = Date()
+                self?.writeSketchybarState()
+            }
+        }
+    }
+
+    /// Scrive l'evento in corso su disco per l'item sketchybar `calendar_center`
+    /// (Mac senza notch fisico), che non può leggere direttamente lo stato Swift.
+    func writeSketchybarState() {
+        let payload: [String: Any]
+        if let event = currentEvent {
+            let remainingSeconds = event.endDate.timeIntervalSince(now)
+            let remainingMinutes = max(1, Int(remainingSeconds.rounded(.up)) / 60)
+            payload = [
+                "has_event": true,
+                "title": event.title,
+                "color": event.calendarColorHex,
+                "remaining_minutes": remainingMinutes
+            ]
+        } else {
+            payload = ["has_event": false]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        try? data.write(to: sketchybarStateURL, options: .atomic)
     }
 
     deinit {
         if let storeObserver { NotificationCenter.default.removeObserver(storeObserver) }
         googlePhotoLoadTask?.cancel()
+        nowTimer?.invalidate()
     }
 
     func prepareForExpansion() {
@@ -2112,51 +2359,55 @@ final class CalendarModel: ObservableObject {
 
     func refresh(forceGooglePhotos: Bool = false) {
         guard isAuthorized else { return }
+        requestContactsAccessIfNeeded()
 
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: displayedDate)
-        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return }
-        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: nil)
+        eventLoadGeneration += 1
+        let generation = eventLoadGeneration
+        let day = displayedDate
+        let showingToday = Calendar.current.isDateInToday(day)
+        let eventStore = self.eventStore
+        let contactStore = self.contactStore
+        let overridesSnapshot = rsvpOverrides
 
-        events = eventStore.events(matching: predicate)
-            .map { event in
-                let eventIdentifier = event.eventIdentifier ?? UUID().uuidString
-                let externalIdentifier = event.calendarItemExternalIdentifier ?? eventIdentifier
-                let nsColor = NSColor(cgColor: event.calendar.cgColor) ?? .systemBlue
-                let currentParticipant = event.attendees?.first(where: \.isCurrentUser)
-                let nativeRSVPStatus = currentParticipant.map { RSVPStatus($0.participantStatus) } ?? .needsAction
-                let lookupKey = "\(externalIdentifier)-\(event.startDate.timeIntervalSince1970)"
-                let effectiveRSVPStatus: RSVPStatus
-                if let override = rsvpOverrides[lookupKey] {
-                    effectiveRSVPStatus = override
-                    if override == nativeRSVPStatus { rsvpOverrides.removeValue(forKey: lookupKey) }
-                } else {
-                    effectiveRSVPStatus = nativeRSVPStatus
-                }
-                let participantEmail = currentParticipant.flatMap(participantEmail(for:))
-                return CalendarEventViewModel(
-                    id: "\(eventIdentifier)-\(event.startDate.timeIntervalSince1970)",
-                    eventIdentifier: eventIdentifier,
-                    externalIdentifier: externalIdentifier,
-                    title: event.title?.isEmpty == false ? event.title! : "Evento senza titolo",
-                    startDate: event.startDate,
-                    endDate: event.endDate,
-                    isAllDay: event.isAllDay,
-                    location: event.location?.isEmpty == false ? event.location : nil,
-                    calendarColor: Color(nsColor: nsColor),
-                    attendees: attendeeViewModels(for: event),
-                    meetingLink: meetingLink(for: event),
-                    currentUserParticipantEmail: participantEmail,
-                    rsvpStatus: effectiveRSVPStatus,
-                    canRespond: currentParticipant != nil,
-                    rsvpLookupKey: lookupKey
-                )
+        Task { @MainActor [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                loadEvents(on: day, eventStore: eventStore, contactStore: contactStore, rsvpOverrides: overridesSnapshot)
+            }.value
+
+            guard let self, self.eventLoadGeneration == generation else { return }
+            for key in result.clearedOverrideKeys {
+                self.rsvpOverrides.removeValue(forKey: key)
             }
-            .sorted { lhs, rhs in
-                if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay }
-                return lhs.startDate < rhs.startDate
+            self.events = result.events
+
+            if showingToday {
+                self.todayEvents = result.events
+                self.writeSketchybarState()
+            } else {
+                await self.refreshTodayEvents()
             }
-        loadGoogleContactPhotos(forceRefresh: forceGooglePhotos)
+            self.loadGoogleContactPhotos(forceRefresh: forceGooglePhotos)
+        }
+    }
+
+    /// Rilegge gli eventi di *oggi* per il widget collassato, indipendentemente
+    /// dal giorno mostrato nella vista espansa. Gira su un task in background
+    /// per non bloccare il main thread con le query EventKit/Contacts.
+    private func refreshTodayEvents() async {
+        guard isAuthorized else { return }
+        let eventStore = self.eventStore
+        let contactStore = self.contactStore
+        let overridesSnapshot = rsvpOverrides
+
+        let result = await Task.detached(priority: .userInitiated) {
+            loadEvents(on: Date(), eventStore: eventStore, contactStore: contactStore, rsvpOverrides: overridesSnapshot)
+        }.value
+
+        for key in result.clearedOverrideKeys {
+            rsvpOverrides.removeValue(forKey: key)
+        }
+        todayEvents = result.events
+        writeSketchybarState()
     }
 
     func respond(to event: CalendarEventViewModel, with status: RSVPStatus) {
@@ -2226,6 +2477,7 @@ final class CalendarModel: ObservableObject {
             isAllDay: event.isAllDay,
             location: event.location,
             calendarColor: event.calendarColor,
+            calendarColorHex: event.calendarColorHex,
             attendees: event.attendees,
             meetingLink: event.meetingLink,
             currentUserParticipantEmail: event.currentUserParticipantEmail,
@@ -2233,95 +2485,6 @@ final class CalendarModel: ObservableObject {
             canRespond: event.canRespond,
             rsvpLookupKey: event.rsvpLookupKey
         )
-    }
-
-    private func meetingLink(for event: EKEvent) -> MeetingLinkViewModel? {
-        var candidates: [(field: String, url: URL)] = []
-        if let url = event.url { candidates.append(("url", url)) }
-        candidates += detectedURLs(in: event.location).map { ("location", $0) }
-        candidates += detectedURLs(in: event.structuredLocation?.title).map { ("structuredLocation", $0) }
-        candidates += detectedURLs(in: event.notes).map { ("notes", $0) }
-
-        for candidate in candidates {
-            let host = (candidate.url.host ?? "").lowercased()
-            let scheme = (candidate.url.scheme ?? "").lowercased()
-            let provider: MeetingProvider?
-            if host == "meet.google.com" || host.hasSuffix(".meet.google.com") {
-                provider = .googleMeet
-            } else if host == "zoom.us" || host.hasSuffix(".zoom.us") ||
-                        host == "zoomgov.com" || host.hasSuffix(".zoomgov.com") ||
-                        scheme.hasPrefix("zoom") {
-                provider = .zoom
-            } else if host == "teams.microsoft.com" || host.hasSuffix(".teams.microsoft.com") ||
-                        host == "teams.live.com" || host.hasSuffix(".teams.live.com") ||
-                        host == "teams.cloud.microsoft" || host.hasSuffix(".teams.cloud.microsoft") ||
-                        scheme == "msteams" {
-                provider = .microsoftTeams
-            } else {
-                provider = nil
-            }
-
-            if let provider {
-                return MeetingLinkViewModel(provider: provider, url: candidate.url, sourceField: candidate.field)
-            }
-        }
-        return nil
-    }
-
-    private func detectedURLs(in text: String?) -> [URL] {
-        guard let text, !text.isEmpty,
-              let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return detector.matches(in: text, range: range).compactMap(\.url)
-    }
-
-    private func attendeeViewModels(for event: EKEvent) -> [CalendarAttendeeViewModel] {
-        let attendees = (event.attendees ?? []).filter {
-            !$0.isCurrentUser && $0.participantType == .person
-        }
-        guard !attendees.isEmpty else { return [] }
-
-        requestContactsAccessIfNeeded()
-        return attendees.enumerated().map { index, participant in
-            let contact = matchingContact(for: participant)
-            let participantName = participant.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let contactName = contact.flatMap { CNContactFormatter.string(from: $0, style: .fullName) }
-            let eventKitEmail = participantEmail(for: participant)
-            let contactEmail = contact?.emailAddresses.lazy
-                .map { String($0.value) }
-                .compactMap(normalizedEmailForPhotoMatch)
-                .first
-            let email = eventKitEmail ?? contactEmail
-            let phoneNumbers = Set((contact?.phoneNumbers ?? []).compactMap {
-                normalizedPhoneForPhotoMatch($0.value.stringValue)
-            }).sorted()
-            let fallbackName = email ?? participant.url.absoluteString
-            let name = contactName?.isEmpty == false
-                ? contactName!
-                : (participantName?.isEmpty == false ? participantName! : fallbackName)
-
-            return CalendarAttendeeViewModel(
-                id: "\(participant.url.absoluteString)-\(index)",
-                name: name,
-                email: email,
-                phoneNumbers: phoneNumbers,
-                googleImageData: nil,
-                appleImageData: contact?.thumbnailImageData
-            )
-        }
-    }
-
-    private func matchingContact(for participant: EKParticipant) -> CNContact? {
-        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return nil }
-        let keys: [CNKeyDescriptor] = [
-            CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
-            CNContactThumbnailImageDataKey as CNKeyDescriptor,
-            CNContactEmailAddressesKey as CNKeyDescriptor,
-            CNContactPhoneNumbersKey as CNKeyDescriptor
-        ]
-        return try? contactStore
-            .unifiedContacts(matching: participant.contactPredicate, keysToFetch: keys)
-            .first
     }
 
     private func loadGoogleContactPhotos(forceRefresh: Bool) {
@@ -2404,6 +2567,7 @@ final class CalendarModel: ObservableObject {
             isAllDay: event.isAllDay,
             location: event.location,
             calendarColor: event.calendarColor,
+            calendarColorHex: event.calendarColorHex,
             attendees: attendees,
             meetingLink: event.meetingLink,
             currentUserParticipantEmail: event.currentUserParticipantEmail,
@@ -2411,31 +2575,6 @@ final class CalendarModel: ObservableObject {
             canRespond: event.canRespond,
             rsvpLookupKey: event.rsvpLookupKey
         )
-    }
-
-    private func participantEmail(for participant: EKParticipant) -> String? {
-        guard participant.url.scheme?.lowercased() == "mailto" else { return nil }
-        let rawValue = participant.url.absoluteString
-            .replacingOccurrences(of: "mailto:", with: "", options: [.caseInsensitive, .anchored])
-        let decoded = rawValue.removingPercentEncoding ?? rawValue
-        let candidate = decoded.split(separator: "?", maxSplits: 1).first.map(String.init) ?? decoded
-        return normalizedEmailForPhotoMatch(candidate)
-    }
-
-    private func normalizedEmailForPhotoMatch(_ value: String) -> String? {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.contains("@") ? normalized : nil
-    }
-
-    private func normalizedPhoneForPhotoMatch(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isInternational = trimmed.hasPrefix("+") || trimmed.hasPrefix("00")
-        var digits = trimmed.filter(\.isNumber)
-        if trimmed.hasPrefix("00"), digits.hasPrefix("00") {
-            digits.removeFirst(2)
-        }
-        guard digits.count >= 8 else { return nil }
-        return isInternational ? "+\(digits)" : digits
     }
 
     private func requestContactsAccessIfNeeded() {
@@ -2560,8 +2699,10 @@ struct CalendarNotchView: View {
                 expandedContent
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
             } else {
-                // Il notch fisico fornisce già la superficie nera: a riposo
-                // manteniamo soltanto l'area trasparente per il tracking hover.
+                // A riposo non disegniamo nulla: sul notch fisico la superficie
+                // nera è già data dall'hardware; sui Mac senza notch il pill
+                // "in quiete" è un item sketchybar nativo (calendar_center),
+                // questa finestra si mostra solo quando espansa.
                 Color.clear
             }
         }
@@ -2599,14 +2740,16 @@ struct CalendarNotchView: View {
         VStack(spacing: 12) {
             ZStack {
                 Text(monthTitle)
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 16))
+                    .fontWeight(.medium)
                     .foregroundStyle(secondaryText)
 
                 HStack(spacing: 7) {
                     Spacer()
                     Button { onOpenSettings(nil) } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.custom("Google Sans Flex 18pt", size: 10))
+                            .fontWeight(.semibold)
                             .foregroundStyle(secondaryText)
                             .frame(width: 22, height: 22)
                             .background(Color.white.opacity(0.07))
@@ -2618,7 +2761,8 @@ struct CalendarNotchView: View {
 
                     Button { model.refresh() } label: {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.custom("Google Sans Flex 18pt", size: 10))
+                            .fontWeight(.semibold)
                             .foregroundStyle(secondaryText)
                             .frame(width: 22, height: 22)
                             .background(Color.white.opacity(0.07))
@@ -2670,11 +2814,13 @@ struct CalendarNotchView: View {
         } label: {
             VStack(spacing: 5) {
                 Text(weekdaySymbol(for: date))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 11))
+                    .fontWeight(.semibold)
                     .foregroundStyle(isToday ? accent : subtleText)
 
                 Text(date.formatted(.dateTime.day()))
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 15))
+                    .fontWeight(.semibold)
                     .foregroundStyle(isSelected ? primaryText : (isToday ? accent : secondaryText))
                     .frame(width: 30, height: 30)
                     .background {
@@ -2698,7 +2844,8 @@ struct CalendarNotchView: View {
             }
         } label: {
             Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.custom("Google Sans Flex 18pt", size: 12))
+                .fontWeight(.semibold)
                 .foregroundStyle(secondaryText)
                 .frame(width: 22, height: 54)
                 .contentShape(Rectangle())
@@ -2767,13 +2914,15 @@ struct CalendarNotchView: View {
     private func stateView<Action: View>(icon: String, title: String, message: String, @ViewBuilder action: () -> Action) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 23, weight: .medium))
+                .font(.custom("Google Sans Flex 18pt", size: 23))
+                .fontWeight(.medium)
                 .foregroundStyle(secondaryText)
             Text(title)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.custom("Google Sans Flex 18pt", size: 15))
+                .fontWeight(.semibold)
                 .foregroundStyle(primaryText)
             Text(message)
-                .font(.system(size: 12))
+                .font(.custom("Google Sans Flex 18pt", size: 12))
                 .foregroundStyle(secondaryText)
                 .multilineTextAlignment(.center)
             action()
@@ -2835,7 +2984,8 @@ struct AttendeeAvatarStack: View {
                     .fill(surfaceHover)
                     .overlay {
                         Text("+\(attendees.count - visibleAttendees.count)")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .font(.custom("Google Sans Flex 18pt", size: 9))
+                            .fontWeight(.bold)
                             .foregroundStyle(secondaryText)
                     }
                     .overlay { Circle().stroke(panelBlack, lineWidth: 2) }
@@ -2860,7 +3010,8 @@ struct AttendeeAvatarStack: View {
                 .fill(surfaceHover)
                 .overlay {
                     Text(attendee.initials)
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(.custom("Google Sans Flex 18pt", size: 9))
+                        .fontWeight(.bold)
                         .foregroundStyle(primaryText)
                 }
                 .overlay { Circle().stroke(panelBlack, lineWidth: 2) }
@@ -2893,7 +3044,8 @@ struct EventRow: View {
 
                         if event.attendees.isEmpty {
                             Image(systemName: "calendar")
-                                .font(.system(size: 20, weight: .medium))
+                                .font(.custom("Google Sans Flex 18pt", size: 20))
+                                .fontWeight(.medium)
                                 .foregroundStyle(event.calendarColor)
                                 .frame(width: 58, alignment: .leading)
                         } else {
@@ -2902,7 +3054,8 @@ struct EventRow: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(event.title)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .font(.custom("Google Sans Flex 18pt", size: 14))
+                                .fontWeight(.semibold)
                                 .foregroundStyle(primaryText)
                                 .lineLimit(1)
 
@@ -2913,13 +3066,15 @@ struct EventRow: View {
                                     Text(location).lineLimit(1)
                                 }
                             }
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.custom("Google Sans Flex 18pt", size: 11))
+                            .fontWeight(.medium)
                             .foregroundStyle(secondaryText)
                         }
 
                         Spacer(minLength: 2)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.custom("Google Sans Flex 18pt", size: 10))
+                            .fontWeight(.semibold)
                             .foregroundStyle(subtleText)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
@@ -2934,7 +3089,8 @@ struct EventRow: View {
                         NSWorkspace.shared.open(meeting.url)
                     } label: {
                         Text("Partecipa")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(.custom("Google Sans Flex 18pt", size: 11))
+                            .fontWeight(.semibold)
                             .foregroundStyle(Color.white)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
@@ -2971,7 +3127,8 @@ struct EventRow: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Text("Partecipazione")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.custom("Google Sans Flex 18pt", size: 12))
+                    .fontWeight(.semibold)
                     .foregroundStyle(primaryText)
 
                 Spacer()
@@ -2991,7 +3148,8 @@ struct EventRow: View {
                     Image(systemName: "arrow.up.right.square")
                     Text("Apri in Calendar")
                 }
-                .font(.system(size: 10, weight: .medium))
+                .font(.custom("Google Sans Flex 18pt", size: 10))
+                .fontWeight(.medium)
                 .foregroundStyle(subtleText)
             }
             .buttonStyle(.plain)
@@ -3007,7 +3165,8 @@ struct EventRow: View {
                 ProgressView().controlSize(.mini)
                 Text("Aggiornamento…")
             }
-            .font(.system(size: 9, weight: .medium))
+            .font(.custom("Google Sans Flex 18pt", size: 9))
+            .fontWeight(.medium)
             .foregroundStyle(secondaryText)
         default:
             EmptyView()
@@ -3018,13 +3177,15 @@ struct EventRow: View {
     private var statusFeedback: some View {
         if !event.canRespond {
             Text("Non sei tra gli invitati di questo evento.")
-                .font(.system(size: 10, weight: .medium))
+                .font(.custom("Google Sans Flex 18pt", size: 10))
+                .fontWeight(.medium)
                 .foregroundStyle(secondaryText)
         } else {
             switch rsvpState {
             case .success:
                 Label("Risposta aggiornata", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.custom("Google Sans Flex 18pt", size: 10))
+                    .fontWeight(.medium)
                     .foregroundStyle(Color(red: 0.15, green: 0.67, blue: 0.36))
             case .failed(let message):
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -3037,11 +3198,13 @@ struct EventRow: View {
                             .foregroundStyle(primaryText)
                     }
                 }
-                .font(.system(size: 10, weight: .medium))
+                .font(.custom("Google Sans Flex 18pt", size: 10))
+                .fontWeight(.medium)
                 .foregroundStyle(Color(red: 0.95, green: 0.36, blue: 0.38))
             case .unavailable(let message):
                 Text(message)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.custom("Google Sans Flex 18pt", size: 10))
+                    .fontWeight(.medium)
                     .foregroundStyle(secondaryText)
                     .lineLimit(2)
             case .accountRequired(let email):
@@ -3053,7 +3216,8 @@ struct EventRow: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(primaryText)
                 }
-                .font(.system(size: 10, weight: .medium))
+                .font(.custom("Google Sans Flex 18pt", size: 10))
+                .fontWeight(.medium)
                 .foregroundStyle(Color.orange)
             default:
                 EmptyView()
@@ -3068,7 +3232,8 @@ struct EventRow: View {
             onRespond(status)
         } label: {
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(.custom("Google Sans Flex 18pt", size: 10))
+                .fontWeight(.semibold)
                 .foregroundStyle(isSelected ? Color.white : secondaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 27)
@@ -3160,11 +3325,64 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
+// MARK: - IPC (mostra/nascondi popup su richiesta dell'item sketchybar centrale)
+
+final class NotchIPCServer {
+    var onShow: (() -> Void)?
+    var onHide: (() -> Void)?
+
+    func start() {
+        let path = "/tmp/calendar_notch.sock"
+        try? FileManager.default.removeItem(atPath: path)
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+            path.withCString { src in
+                _ = Darwin.strncpy(dst.baseAddress!.assumingMemoryBound(to: Int8.self), src, 104)
+            }
+        }
+        let len = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let bound = withUnsafePointer(to: addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, len) == 0 }
+        }
+        guard bound, Darwin.listen(fd, 5) == 0 else { return }
+
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            while true {
+                let c = Darwin.accept(fd, nil, nil); guard c >= 0 else { continue }
+                var buf = [UInt8](repeating: 0, count: 256)
+                let n = Darwin.read(c, &buf, 255); Darwin.close(c)
+                guard n > 0 else { continue }
+                let msg = String(bytes: buf[0..<n], encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                DispatchQueue.main.async {
+                    if msg == "show" { self?.onShow?() }
+                    else if msg == "hide" { self?.onHide?() }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Panel
 
 final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+/// AppKit ricalcola il cursore tramite i "cursor rects" a ogni movimento del
+/// mouse, sovrascrivendo qualunque `NSCursor.set()` chiamato da `onHover`
+/// SwiftUI. Dichiarare un cursor rect su tutta la view è l'unico modo per far
+/// sì che la manina resti stabile su tutta l'area del widget.
+private final class PointingHandHostingView<Content: View>: NSHostingView<Content> {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
 }
 
 @MainActor
@@ -3181,12 +3399,14 @@ final class NotchPanelController: NSObject {
     private let closeDelay = 0.25
 
     private var panel: NotchPanel?
-    private var hostingView: NSHostingView<CalendarNotchView>?
+    private var hostingView: PointingHandHostingView<CalendarNotchView>?
     private var notchScreen: NSScreen?
     private var notchRect: NSRect = .zero
+    private var hasPhysicalNotch = true
     private var closeWorkItem: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
     private var dayTimer: Timer?
+    private let ipc = NotchIPCServer()
 
     override init() {
         let googleOAuthManager = GoogleOAuthManager()
@@ -3219,6 +3439,9 @@ final class NotchPanelController: NSObject {
         dayTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.model.refreshIfDayChanged() }
         }
+        ipc.onShow = { [weak self] in self?.expand() }
+        ipc.onHide = { [weak self] in self?.scheduleCollapse() }
+        ipc.start()
     }
 
     deinit {
@@ -3232,8 +3455,19 @@ final class NotchPanelController: NSObject {
             return
         }
         buildPanelIfNeeded()
-        movePanel(animated: false)
-        panel?.orderFrontRegardless()
+        if hasPhysicalNotch {
+            // Sul notch fisico la finestra resta sempre visibile (trasparente a
+            // riposo): il nero del notch stesso funge da sfondo.
+            movePanel(animated: false)
+            panel?.orderFrontRegardless()
+        } else {
+            // Sui Mac senza notch il pill "in quiete" è un item sketchybar nativo
+            // (calendar_center): questa finestra resta nascosta finché l'item non
+            // segnala un hover via socket, così non partecipa mai allo swipe tra
+            // scrivanie. Il calendario va comunque autorizzato/caricato subito per
+            // popolare lo stato che l'item legge da disco.
+            model.prepareForExpansion()
+        }
     }
 
     private func buildPanelIfNeeded() {
@@ -3249,7 +3483,7 @@ final class NotchPanelController: NSObject {
                 self?.openSettings(preferredEmail: preferredEmail)
             }
         )
-        let hosting = NSHostingView(rootView: rootView)
+        let hosting = PointingHandHostingView(rootView: rootView)
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.layer?.borderWidth = 0
@@ -3293,6 +3527,11 @@ final class NotchPanelController: NSObject {
         withAnimation(.easeInOut(duration: animationDuration)) {
             presentation.isExpanded = true
         }
+        if !hasPhysicalNotch {
+            // La finestra è nascosta a riposo su Mac senza notch: va rimostrata
+            // solo ora che l'item sketchybar segnala l'hover.
+            panel?.orderFrontRegardless()
+        }
         movePanel(animated: true)
     }
 
@@ -3308,7 +3547,15 @@ final class NotchPanelController: NSObject {
         withAnimation(.easeInOut(duration: animationDuration * 0.8)) {
             presentation.isExpanded = false
         }
-        movePanel(animated: true)
+        if hasPhysicalNotch {
+            movePanel(animated: true)
+        } else {
+            // Torna a nascondersi del tutto: il pill "in quiete" è l'item
+            // sketchybar, non questa finestra.
+            movePanel(animated: true) { [weak self] in
+                self?.panel?.orderOut(nil)
+            }
+        }
     }
 
     private func movePanel(animated: Bool, completion: (() -> Void)? = nil) {
@@ -3335,37 +3582,59 @@ final class NotchPanelController: NSObject {
             NSApp.terminate(nil)
             return
         }
-        panel?.orderFrontRegardless()
+        if hasPhysicalNotch || presentation.isExpanded {
+            panel?.orderFrontRegardless()
+        }
         movePanel(animated: false)
     }
 
     @discardableResult
     private func updateNotchGeometry() -> Bool {
-        guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) else { return false }
-        notchScreen = screen
+        if let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
+            hasPhysicalNotch = true
+            notchScreen = screen
 
-        let topInset = screen.safeAreaInsets.top
-        let leftEdge = screen.auxiliaryTopLeftArea?.maxX
-        let rightEdge = screen.auxiliaryTopRightArea?.minX
-        let fallbackWidth = min(220, screen.frame.width * 0.18)
-        let minX: CGFloat
-        let width: CGFloat
+            let topInset = screen.safeAreaInsets.top
+            let leftEdge = screen.auxiliaryTopLeftArea?.maxX
+            let rightEdge = screen.auxiliaryTopRightArea?.minX
+            let fallbackWidth = min(220, screen.frame.width * 0.18)
+            let minX: CGFloat
+            let width: CGFloat
 
-        if let leftEdge, let rightEdge, rightEdge > leftEdge {
-            minX = leftEdge
-            width = rightEdge - leftEdge
-        } else {
-            width = fallbackWidth
-            minX = screen.frame.midX - width / 2
+            if let leftEdge, let rightEdge, rightEdge > leftEdge {
+                minX = leftEdge
+                width = rightEdge - leftEdge
+            } else {
+                width = fallbackWidth
+                minX = screen.frame.midX - width / 2
+            }
+
+            notchRect = NSRect(
+                x: minX,
+                y: screen.frame.maxY - topInset,
+                width: width,
+                height: topInset
+            )
+            presentation.notchHeight = topInset
+            return true
         }
 
-        notchRect = NSRect(
-            x: minX,
-            y: screen.frame.maxY - topInset,
-            width: width,
-            height: topInset
-        )
-        presentation.notchHeight = topInset
+        // Nessun notch fisico (es. MacBook Air): sintetizziamo un pill centrato
+        // alla stessa altezza della sketchybar (margin=8, height=36) invece di
+        // rinunciare al widget.
+        guard let screen = NSScreen.main else { return false }
+        hasPhysicalNotch = false
+        notchScreen = screen
+
+        let width: CGFloat = 200
+        let height: CGFloat = 34
+        let barMargin: CGFloat = 8
+        let barHeight: CGFloat = 36
+        let minX = screen.frame.midX - width / 2
+        let y = screen.frame.maxY - barMargin - barHeight + (barHeight - height) / 2
+
+        notchRect = NSRect(x: minX, y: y, width: width, height: height)
+        presentation.notchHeight = height
         return true
     }
 

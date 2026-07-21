@@ -18,7 +18,7 @@ sketchybar --default \
   padding_left=4 \
   padding_right=4 \
   icon.font="JetBrainsMono Nerd Font:Bold:15.0" \
-  label.font="SF Pro:Semibold:15.0" \
+  label.font="Google Sans Flex 18pt:Semibold:15.0" \
   icon.color=0xffcdd6f4 \
   label.color=0xffcdd6f4 \
   icon.padding_left=8 \
@@ -37,7 +37,7 @@ sketchybar --add item clock_time left \
            --set clock_time \
              update_freq=30 \
              icon.drawing=off \
-             label.font="SF Pro:Medium:16.0" \
+             label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=12 \
              label.padding_right=12 \
@@ -52,7 +52,7 @@ sketchybar --add item clock_date left \
            --set clock_date \
              update_freq=60 \
              icon.drawing=off \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffcac4d0 \
              label.padding_left=12 \
              label.padding_right=12 \
@@ -70,7 +70,7 @@ sketchybar --add item weather left \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -80,6 +80,34 @@ sketchybar --add item weather left \
              background.height=34 \
              script="$PLUGIN_DIR/weather.sh" \
              click_script="$PLUGIN_DIR/weather_set_location.sh"
+
+##### CENTER #####
+
+# Sui Mac con notch fisico il widget calendario vive già nel notch stesso
+# (overlay disegnato da calendar_notch); qui aggiungiamo un item nativo solo
+# dove non c'è un notch, così eredita la fissità della barra vera invece di
+# scorrere durante lo swipe tra scrivanie.
+HAS_NOTCH=$("$PLUGIN_DIR/has_notch" 2>/dev/null)
+if [ "$HAS_NOTCH" != "1" ]; then
+  sketchybar --add item calendar_center center \
+             --set calendar_center \
+               update_freq=20 \
+               icon="●" \
+               icon.font="Google Sans Flex 18pt:Regular:10.0" \
+               icon.color=0x44cdd6f4 \
+               icon.padding_left=12 \
+               icon.padding_right=6 \
+               label.font="Google Sans Flex 18pt:Medium:14.0" \
+               label.color=0xffe6e1e5 \
+               label.padding_left=0 \
+               label.padding_right=12 \
+               background.drawing=on \
+               background.color=0xff49454f \
+               background.corner_radius=16 \
+               background.height=34 \
+               script="$PLUGIN_DIR/calendar.sh" \
+             --subscribe calendar_center mouse.entered mouse.exited
+fi
 
 ##### RIGHT #####
 # (aggiunto in ordine inverso: il primo sarà più a destra)
@@ -105,7 +133,7 @@ sketchybar --add item vpn right \
              icon.color=0xffe6e1e5 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -137,7 +165,7 @@ sketchybar --add item mem right \
              icon.color=0xffcac4d0 \
              icon.padding_left=2 \
              icon.padding_right=3 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -152,7 +180,7 @@ sketchybar --add item cpu right \
              icon.color=0xffcac4d0 \
              icon.padding_left=2 \
              icon.padding_right=3 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=4 \
@@ -168,7 +196,7 @@ sketchybar --add item gpu right \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=3 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=4 \
@@ -201,7 +229,7 @@ sketchybar --add item battery right \
              icon.color=0xffcac4d0 \
              icon.padding_left=4 \
              icon.padding_right=4 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=12 \
@@ -218,7 +246,7 @@ sketchybar --add item volume right \
              icon.color=0xffcac4d0 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="SF Pro:Medium:14.0" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=0 \
              label.padding_right=4 \
@@ -243,15 +271,16 @@ fi
 "$PLUGIN_DIR/network_popup" &
 echo $! > /tmp/network_popup.pid
 
-# Avvia il calendario del notch solo sui display compatibili
+# Avvia il widget calendario: usa il notch fisico se presente, altrimenti
+# disegna un pill centrato alla stessa altezza della bar (gestito internamente
+# dal binario in base alla geometria dello schermo).
 CALENDAR_NOTCH_PID=/tmp/calendar_notch.pid
 if [ -f "$CALENDAR_NOTCH_PID" ]; then
   kill "$(cat "$CALENDAR_NOTCH_PID")" 2>/dev/null
   rm -f "$CALENDAR_NOTCH_PID"
 fi
 
-HAS_NOTCH=$("$PLUGIN_DIR/has_notch" 2>/dev/null)
-if [ "$HAS_NOTCH" = "1" ] && [ -x "$PLUGIN_DIR/calendar_notch" ]; then
+if [ -x "$PLUGIN_DIR/calendar_notch" ]; then
   "$PLUGIN_DIR/calendar_notch" &
   echo $! > "$CALENDAR_NOTCH_PID"
 fi
