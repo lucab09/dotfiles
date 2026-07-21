@@ -1,16 +1,9 @@
 #!/bin/sh
 
+# Aggiorna periodicamente label/colore del widget e la visibilità del
+# bottone "Partecipa". Il popup con l'agenda si apre/chiude con un click
+# sul widget (vedi calendar_toggle.sh), non più su hover.
 STATE_FILE="/tmp/sketchybar_calendar_state.json"
-SOCK="/tmp/calendar_notch.sock"
-
-case "$SENDER" in
-  mouse.entered)
-    echo "show" | nc -U "$SOCK" 2>/dev/null || true
-    ;;
-  mouse.exited)
-    echo "hide" | nc -U "$SOCK" 2>/dev/null || true
-    ;;
-esac
 
 STATE=$(python3 -c "
 import json

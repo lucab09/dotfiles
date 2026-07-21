@@ -3462,6 +3462,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 final class NotchIPCServer {
     var onShow: (() -> Void)?
     var onHide: (() -> Void)?
+    var onToggle: (() -> Void)?
 
     func start() {
         let path = "/tmp/calendar_notch.sock"
@@ -3493,6 +3494,7 @@ final class NotchIPCServer {
                 DispatchQueue.main.async {
                     if msg == "show" { self?.onShow?() }
                     else if msg == "hide" { self?.onHide?() }
+                    else if msg == "toggle" { self?.onToggle?() }
                 }
             }
         }
@@ -3573,6 +3575,7 @@ final class NotchPanelController: NSObject {
         }
         ipc.onShow = { [weak self] in self?.expand() }
         ipc.onHide = { [weak self] in self?.scheduleCollapse() }
+        ipc.onToggle = { [weak self] in self?.toggle() }
         ipc.start()
     }
 
@@ -3665,6 +3668,19 @@ final class NotchPanelController: NSObject {
             panel?.orderFrontRegardless()
         }
         movePanel(animated: true)
+    }
+
+    /// Click sul widget collassato (Mac senza notch fisico): apre o chiude
+    /// il popup immediatamente, senza il ritardo di `scheduleCollapse`
+    /// pensato per l'hover.
+    private func toggle() {
+        closeWorkItem?.cancel()
+        closeWorkItem = nil
+        if presentation.isExpanded {
+            collapse()
+        } else {
+            expand()
+        }
     }
 
     private func scheduleCollapse() {
