@@ -2763,6 +2763,23 @@ struct CalendarNotchView: View {
                     .foregroundStyle(secondaryText)
 
                 HStack(spacing: 7) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            expandedEventID = nil
+                            weekNavigationDirection = weekOffset > 0 ? -1 : 1
+                            weekOffset = 0
+                            model.selectDate(Date())
+                        }
+                    } label: {
+                        Text("Today")
+                            .font(.custom("Google Sans Flex 18pt", size: 11))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(secondaryText)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Vai a oggi")
+                    .accessibilityLabel("Vai a oggi")
+
                     Spacer()
                     Button { onOpenSettings(nil) } label: {
                         Image(systemName: "gearshape")
@@ -3109,10 +3126,13 @@ struct EventRow: View {
                         Text("Partecipa")
                             .font(.custom("Google Sans Flex 18pt", size: 11))
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color.white)
+                            .foregroundStyle(joinButtonForeground(for: meeting.provider))
                             .padding(.horizontal, 10)
                             .frame(height: 28)
-                            .background(meetingColor(for: meeting.provider).opacity(isJoinHovered ? 1 : 0.86))
+                            .background(joinButtonBackground(for: meeting.provider))
+                            .overlay(
+                                Capsule().strokeBorder(joinButtonBorder(for: meeting.provider), lineWidth: 1.4)
+                            )
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -3285,6 +3305,46 @@ struct EventRow: View {
             return Color(red: 45 / 255, green: 140 / 255, blue: 255 / 255)
         case .microsoftTeams:
             return Color(red: 98 / 255, green: 100 / 255, blue: 167 / 255)
+        }
+    }
+
+    /// Il colore del bottone "Partecipa" riflette lo stato di partecipazione:
+    /// pieno se accettato, bordato del colore del provider se in sospeso/forse,
+    /// grigio se rifiutato. Così lo stato di risposta è visibile a colpo d'occhio
+    /// senza dover espandere l'evento.
+    private func joinButtonBackground(for provider: MeetingProvider) -> Color {
+        guard event.canRespond else {
+            return meetingColor(for: provider).opacity(isJoinHovered ? 1 : 0.86)
+        }
+        switch event.rsvpStatus {
+        case .accepted:
+            return meetingColor(for: provider).opacity(isJoinHovered ? 1 : 0.86)
+        case .declined:
+            return Color.white.opacity(isJoinHovered ? 0.14 : 0.09)
+        case .tentative, .needsAction:
+            return Color.white.opacity(isJoinHovered ? 0.1 : 0.05)
+        }
+    }
+
+    private func joinButtonBorder(for provider: MeetingProvider) -> Color {
+        guard event.canRespond else { return .clear }
+        switch event.rsvpStatus {
+        case .accepted, .declined:
+            return .clear
+        case .tentative, .needsAction:
+            return meetingColor(for: provider)
+        }
+    }
+
+    private func joinButtonForeground(for provider: MeetingProvider) -> Color {
+        guard event.canRespond else { return .white }
+        switch event.rsvpStatus {
+        case .accepted:
+            return .white
+        case .declined:
+            return secondaryText
+        case .tentative, .needsAction:
+            return .white
         }
     }
 
