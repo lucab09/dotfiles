@@ -1718,6 +1718,27 @@ enum MeetingProvider: String {
     case googleMeet = "Google Meet"
     case zoom = "Zoom"
     case microsoftTeams = "Microsoft Teams"
+
+    /// Colore di brand del provider, condiviso fra il bottone "Partecipa"
+    /// nell'agenda espansa e il chip del widget collassato.
+    var brandColor: Color {
+        switch self {
+        case .googleMeet:
+            return Color(red: 0 / 255, green: 172 / 255, blue: 71 / 255)
+        case .zoom:
+            return Color(red: 45 / 255, green: 140 / 255, blue: 255 / 255)
+        case .microsoftTeams:
+            return Color(red: 98 / 255, green: 100 / 255, blue: 167 / 255)
+        }
+    }
+
+    var brandColorHex: String {
+        switch self {
+        case .googleMeet: return "0xff00ac47"
+        case .zoom: return "0xff2d8cff"
+        case .microsoftTeams: return "0xff6264a7"
+        }
+    }
 }
 
 struct MeetingLinkViewModel {
@@ -2327,6 +2348,11 @@ final class CalendarModel: ObservableObject {
             ]
             if let meeting = event.meetingLink {
                 spotlightPayload["meeting_url"] = meeting.url.absoluteString
+                spotlightPayload["meeting_color"] = meeting.provider.brandColorHex
+                if inProgress {
+                    let endsInSeconds = event.endDate.timeIntervalSince(now)
+                    spotlightPayload["ends_in_minutes"] = max(1, Int(endsInSeconds.rounded(.up)) / 60)
+                }
             }
             payload = spotlightPayload
         } else if let event = currentEvent {
@@ -3333,14 +3359,7 @@ struct EventRow: View {
     }
 
     private func meetingColor(for provider: MeetingProvider) -> Color {
-        switch provider {
-        case .googleMeet:
-            return Color(red: 0 / 255, green: 172 / 255, blue: 71 / 255)
-        case .zoom:
-            return Color(red: 45 / 255, green: 140 / 255, blue: 255 / 255)
-        case .microsoftTeams:
-            return Color(red: 98 / 255, green: 100 / 255, blue: 167 / 255)
-        }
+        provider.brandColor
     }
 
     /// Il colore del bottone "Partecipa" riflette lo stato di partecipazione:
