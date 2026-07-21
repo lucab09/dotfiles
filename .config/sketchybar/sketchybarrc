@@ -144,6 +144,8 @@ if [ "$HAS_NOTCH" != "1" ]; then
   sketchybar --add item calendar_center center \
              --set calendar_center \
                update_freq=20 \
+               padding_left=0 \
+               padding_right=0 \
                icon="●" \
                icon.font="Google Sans Flex 18pt:Regular:14.0" \
                icon.color=0x44cdd6f4 \
@@ -153,12 +155,33 @@ if [ "$HAS_NOTCH" != "1" ]; then
                label.color=0xffe6e1e5 \
                label.padding_left=0 \
                label.padding_right=12 \
+               background.drawing=off \
+               script="$PLUGIN_DIR/calendar.sh" \
+             --subscribe calendar_center mouse.entered mouse.exited
+
+  # Bottone "Partecipa" — compare solo quando calendar.sh rileva un evento con
+  # link alla videochiamata nella finestra -5min/+15min intorno all'inizio.
+  sketchybar --add item calendar_join center \
+             --set calendar_join \
+               drawing=off \
+               padding_left=0 \
+               padding_right=8 \
+               icon.drawing=off \
+               label="Partecipa" \
+               label.font="Google Sans Flex 18pt:Bold:12.0" \
+               label.padding_left=10 \
+               label.padding_right=10 \
+               background.drawing=on \
+               background.corner_radius=10 \
+               background.height=22 \
+               click_script="$PLUGIN_DIR/calendar_join.sh"
+
+  sketchybar --add bracket calendar_pill calendar_center calendar_join \
+             --set calendar_pill \
                background.drawing=on \
                background.color=0xff49454f \
                background.corner_radius=16 \
-               background.height=34 \
-               script="$PLUGIN_DIR/calendar.sh" \
-             --subscribe calendar_center mouse.entered mouse.exited
+               background.height=34
 fi
 
 ##### RIGHT #####

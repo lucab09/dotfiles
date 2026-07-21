@@ -2253,6 +2253,24 @@ final class CalendarModel: ObservableObject {
             .min { $0.startDate < $1.startDate }
     }
 
+    /// Evento "in primo piano" per il widget collassato: appare 5 minuti prima
+    /// del suo inizio (per dare tempo di premere "Partecipa") e resta per 15
+    /// minuti dopo l'inizio, indipendentemente dalla durata effettiva della
+    /// riunione. Fuori da questa finestra si ricade su `currentEvent` /
+    /// `nextUpcomingEvent`.
+    private static let joinLeadTime: TimeInterval = 5 * 60
+    private static let spotlightDuration: TimeInterval = 15 * 60
+
+    var spotlightEvent: CalendarEventViewModel? {
+        todayEvents
+            .filter {
+                !$0.isAllDay &&
+                    now >= $0.startDate.addingTimeInterval(-Self.joinLeadTime) &&
+                    now <= $0.startDate.addingTimeInterval(Self.spotlightDuration)
+            }
+            .min { $0.startDate < $1.startDate }
+    }
+
     private var nowTimer: Timer?
     private let eventStore = EKEventStore()
     private let contactStore = CNContactStore()
@@ -2294,7 +2312,24 @@ final class CalendarModel: ObservableObject {
     /// (Mac senza notch fisico), che non può leggere direttamente lo stato Swift.
     func writeSketchybarState() {
         let payload: [String: Any]
-        if let event = currentEvent {
+        if let event = spotlightEvent {
+            let inProgress = now >= event.startDate
+            let remainingSeconds = inProgress
+                ? event.startDate.addingTimeInterval(Self.spotlightDuration).timeIntervalSince(now)
+                : event.startDate.timeIntervalSince(now)
+            let remainingMinutes = max(1, Int(remainingSeconds.rounded(.up)) / 60)
+            var spotlightPayload: [String: Any] = [
+                "has_event": true,
+                "title": event.title,
+                "color": event.calendarColorHex,
+                "remaining_minutes": remainingMinutes,
+                "in_progress": inProgress
+            ]
+            if let meeting = event.meetingLink {
+                spotlightPayload["meeting_url"] = meeting.url.absoluteString
+            }
+            payload = spotlightPayload
+        } else if let event = currentEvent {
             let remainingSeconds = event.endDate.timeIntervalSince(now)
             let remainingMinutes = max(1, Int(remainingSeconds.rounded(.up)) / 60)
             payload = [
