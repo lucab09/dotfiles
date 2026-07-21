@@ -2246,6 +2246,13 @@ final class CalendarModel: ObservableObject {
             .min { $0.endDate < $1.endDate }
     }
 
+    /// Prossimo evento in agenda (oggi) quando non ce n'è uno in corso adesso.
+    var nextUpcomingEvent: CalendarEventViewModel? {
+        todayEvents
+            .filter { !$0.isAllDay && $0.startDate > now }
+            .min { $0.startDate < $1.startDate }
+    }
+
     private var nowTimer: Timer?
     private let eventStore = EKEventStore()
     private let contactStore = CNContactStore()
@@ -2294,7 +2301,18 @@ final class CalendarModel: ObservableObject {
                 "has_event": true,
                 "title": event.title,
                 "color": event.calendarColorHex,
-                "remaining_minutes": remainingMinutes
+                "remaining_minutes": remainingMinutes,
+                "in_progress": true
+            ]
+        } else if let event = nextUpcomingEvent {
+            let untilStartSeconds = event.startDate.timeIntervalSince(now)
+            let untilStartMinutes = max(1, Int(untilStartSeconds.rounded(.up)) / 60)
+            payload = [
+                "has_event": true,
+                "title": event.title,
+                "color": event.calendarColorHex,
+                "remaining_minutes": untilStartMinutes,
+                "in_progress": false
             ]
         } else {
             payload = ["has_event": false]

@@ -93,7 +93,7 @@ if [ "$HAS_NOTCH" != "1" ]; then
              --set calendar_center \
                update_freq=20 \
                icon="●" \
-               icon.font="Google Sans Flex 18pt:Regular:10.0" \
+               icon.font="Google Sans Flex 18pt:Regular:14.0" \
                icon.color=0x44cdd6f4 \
                icon.padding_left=12 \
                icon.padding_right=6 \
