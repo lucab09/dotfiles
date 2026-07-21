@@ -241,31 +241,29 @@ sketchybar --add item right_gap_stats right \
              label.drawing=off \
              background.drawing=off
 
-# Batteria — MD3 on-surface-variant icon, on-surface label
+# Batteria — pillola unica, sfondo pieno con la tinta già miscelata sul
+# grigio scuro degli altri widget (stesso risultato visivo del tint
+# traslucido dell'AQI, ma senza un secondo strato/bordo). Colore e icona
+# impostati da battery.sh in base al livello di carica.
 sketchybar --add item battery right \
            --set battery \
              update_freq=60 \
              padding_left=0 \
              padding_right=4 \
-             icon.font="Material Symbols Rounded:Regular:22.0" \
-             icon.color=0xffcac4d0 \
+             icon.font="Material Symbols Rounded:Regular:20.0" \
+             icon.color=0xff79d491 \
              icon.padding_left=12 \
              icon.padding_right=4 \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffe6e1e5 \
+             label.font="Google Sans Flex 18pt:Semibold:16.0" \
+             label.color=0xff79d491 \
              label.padding_left=0 \
              label.padding_right=12 \
-             background.drawing=off \
+             background.drawing=on \
+             background.color=0xff515c5a \
+             background.corner_radius=16 \
+             background.height=34 \
              script="$PLUGIN_DIR/battery.sh" \
            --subscribe battery system_woke power_source_change
-
-# Pill MD3 surface-variant che raggruppa la batteria
-sketchybar --add bracket right_pill battery \
-           --set right_pill \
-             background.drawing=on \
-             background.color=0xff49454f \
-             background.corner_radius=16 \
-             background.height=34
 
 sketchybar --update
 
