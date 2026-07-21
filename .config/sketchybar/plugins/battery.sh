@@ -7,30 +7,28 @@ if [ "$PERCENTAGE" = "" ]; then
   exit 0
 fi
 
+GREEN=0xff79d491
+YELLOW=0xfff2c94c
+RED=0xffcf6679
+
+if [ "$PERCENTAGE" -ge 85 ]; then
+  COLOR=$GREEN
+elif [ "$PERCENTAGE" -ge 25 ]; then
+  COLOR=$YELLOW
+else
+  COLOR=$RED
+fi
+
 if [[ "$CHARGING" != "" ]]; then
   ICON="battery_charging_full"
-  COLOR=0xff79d491
-elif [ "$PERCENTAGE" -ge 90 ]; then
-  ICON="battery_full"
-  COLOR=0xffcac4d0
-elif [ "$PERCENTAGE" -ge 70 ]; then
-  ICON="battery_6_bar"
-  COLOR=0xffcac4d0
-elif [ "$PERCENTAGE" -ge 50 ]; then
-  ICON="battery_4_bar"
-  COLOR=0xffcac4d0
-elif [ "$PERCENTAGE" -ge 30 ]; then
-  ICON="battery_3_bar"
-  COLOR=0xffcac4d0
-elif [ "$PERCENTAGE" -ge 20 ]; then
-  ICON="battery_2_bar"
-  COLOR=0xffcac4d0
-elif [ "$PERCENTAGE" -ge 10 ]; then
-  ICON="battery_1_bar"
-  COLOR=0xffcf6679
+elif [ "$PERCENTAGE" -ge 88 ]; then
+  ICON="battery_full_alt"
+elif [ "$PERCENTAGE" -ge 63 ]; then
+  ICON="battery_horiz_075"
+elif [ "$PERCENTAGE" -ge 25 ]; then
+  ICON="battery_horiz_050"
 else
-  ICON="battery_alert"
-  COLOR=0xffcf6679
+  ICON="battery_horiz_000"
 fi
 
 sketchybar --set "$NAME" icon="$ICON" icon.color="$COLOR" label="${PERCENTAGE}%"
