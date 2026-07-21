@@ -1,2 +1,9 @@
 .DS_Store
 *.bak
+.pi/
+.config/pmmgmt/gcal_credentials.json
+
+# Swift plugins are compiled locally by setup.sh
+.config/sketchybar/plugins/calendar_notch
+.config/sketchybar/plugins/has_notch
+.config/sketchybar/plugins/network_popup

@@ -1,14 +1,21 @@
 tap "felixkratz/formulae"
 tap "koekeishiya/formulae"
 
-# SketchyBar
-brew "felixkratz/formulae/sketchybar"
+# Shell and editor tooling
+brew "fish"
+brew "neovim"
+brew "python"
+brew "starship"
+brew "uv"
 
-# Yabai (tiling window manager)
+# Desktop applications
+cask "wezterm"
+cask "zed"
+
+# Menu bar and window management
+brew "felixkratz/formulae/sketchybar"
 brew "koekeishiya/formulae/yabai"
 
-# Font with Nerd Font icons (used by sketchybar and wezterm)
+# Fonts used by SketchyBar, WezTerm, and Starship
 cask "font-jetbrains-mono-nerd-font"
-
-# Material Symbols (used by sketchybar weather/clock icons)
 cask "font-material-symbols"

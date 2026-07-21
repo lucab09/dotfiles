@@ -9,7 +9,7 @@ config = {
 	hide_tab_bar_if_only_one_tab = true,
 	window_background_opacity = 0.9,
 	color_scheme = "Nord (Gogh)",
-	font = wezterm.font("JetBrains Mono", { weight = "Bold" }),
+	font = wezterm.font("JetBrainsMono Nerd Font", { weight = "Bold" }),
 	font_size = 15.0,
 }
 

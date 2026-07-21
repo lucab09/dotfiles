@@ -1,0 +1,35 @@
+#!/usr/bin/env sh
+
+# Layout di default: tiling (bsp = binary space partitioning)
+yabai -m config layout bsp
+
+# Nuove finestre appaiono a destra/sotto
+yabai -m config window_placement second_child
+
+# Lascia spazio alla SketchyBar: y_offset(6) + height(36) = 42px
+yabai -m config external_bar all:42:0
+
+# Padding e gap tra finestre
+yabai -m config top_padding    12
+yabai -m config bottom_padding 12
+yabai -m config left_padding   12
+yabai -m config right_padding  12
+yabai -m config window_gap     12
+
+# Bilanciamento automatico spazio quando si apre/chiude una finestra
+yabai -m config auto_balance off
+
+# Mouse: la finestra sotto il cursore diventa attiva
+yabai -m config mouse_follows_focus          off
+yabai -m config focus_follows_mouse          off
+
+# App da escludere dal tiling (lasciale floating)
+yabai -m rule --add app="^System Preferences$"   manage=off
+yabai -m rule --add app="^System Settings$"      manage=off
+yabai -m rule --add app="^Archive Utility$"      manage=off
+yabai -m rule --add app="^Finder$"               manage=off
+yabai -m rule --add app="^Alfred$"               manage=off
+yabai -m rule --add app="^Raycast$"              manage=off
+yabai -m rule --add app="^Calculator$"           manage=off
+
+echo "yabai configuration loaded"
