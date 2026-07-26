@@ -8,10 +8,6 @@ brew "python"
 brew "starship"
 brew "uv"
 
-# Desktop applications
-cask "wezterm"
-cask "zed"
-
 # Menu bar and window management
 brew "felixkratz/formulae/sketchybar"
 brew "koekeishiya/formulae/yabai"
