@@ -3,65 +3,69 @@
 # Aggiorna periodicamente label/colore del widget e la visibilità del
 # bottone "Partecipa". Il popup con l'agenda si apre/chiude con un click
 # sul widget (vedi calendar_toggle.sh), non più su hover.
-STATE_FILE="/tmp/sketchybar_calendar_state.json"
-
-STATE=$(python3 -c "
+#
+# Tutto l'aggiornamento è delegato a Python, che chiama `sketchybar`
+# direttamente come subprocess: passare i valori (titolo dell'evento
+# incluso) come argv evita di dover ricostruire/spezzare una stringa
+# unita da un delimitatore in shell, che si rompe se il titolo contiene
+# quel carattere (es. "Sync | 1:1").
+NAME="$NAME" python3 - <<'PY'
 import json
+import os
+import subprocess
+
+STATE_FILE = "/tmp/sketchybar_calendar_state.json"
+NAME = os.environ["NAME"]
+
 try:
-    d = json.load(open('$STATE_FILE'))
+    with open(STATE_FILE) as f:
+        d = json.load(f)
 except Exception:
     d = {}
-if d.get('has_event'):
-    minutes = d.get('remaining_minutes', 0)
-    if minutes < 60:
-        duration = f'{minutes}m'
-    else:
-        duration = f'{minutes // 60}h e {minutes % 60}m'
-    ends_in = d.get('ends_in_minutes')
-    print('1|' + d.get('title', 'Evento') + '|' + d.get('color', '0xff89b4fa') + '|' + duration + '|' + ('1' if d.get('in_progress') else '0') + '|' + d.get('meeting_url', '') + '|' + d.get('meeting_color', '') + '|' + (str(ends_in) if ends_in is not None else ''))
+
+
+def sketchybar(*args):
+    subprocess.run(["sketchybar", *args])
+
+
+if not d.get("has_event"):
+    sketchybar("--set", NAME, "icon.color=0x44cdd6f4", "label=Nessun evento")
+    sketchybar("--set", "calendar_join", "drawing=off")
+    raise SystemExit
+
+minutes = d.get("remaining_minutes", 0)
+duration = f"{minutes}m" if minutes < 60 else f"{minutes // 60}h e {minutes % 60}m"
+title = d.get("title", "Evento")
+color = d.get("color", "0xff89b4fa")
+in_progress = bool(d.get("in_progress"))
+meeting_url = d.get("meeting_url", "")
+meeting_color = d.get("meeting_color", "")
+ends_in = d.get("ends_in_minutes")
+
+if in_progress:
+    # In corso con link alla videochiamata: il countdown si sposta nel
+    # bottone ("Termina tra Xm"), qui resta solo il titolo.
+    label = title if meeting_url else f"{title} · {duration}"
 else:
-    print('0|||||||')
-" 2>/dev/null)
+    label = f"{title} · tra {duration}"
 
-HAS_EVENT=$(echo "$STATE" | cut -d'|' -f1)
-TITLE=$(echo "$STATE" | cut -d'|' -f2)
-COLOR=$(echo "$STATE" | cut -d'|' -f3)
-DURATION=$(echo "$STATE" | cut -d'|' -f4)
-IN_PROGRESS=$(echo "$STATE" | cut -d'|' -f5)
-MEETING_URL=$(echo "$STATE" | cut -d'|' -f6)
-MEETING_COLOR=$(echo "$STATE" | cut -d'|' -f7)
-ENDS_IN=$(echo "$STATE" | cut -d'|' -f8)
-
-if [ "$HAS_EVENT" = "1" ]; then
-  if [ "$IN_PROGRESS" = "1" ]; then
-    if [ -n "$MEETING_URL" ]; then
-      # In corso con link alla videochiamata: il countdown si sposta nel
-      # bottone ("Termina tra Xm"), qui resta solo il titolo.
-      sketchybar --set "$NAME" icon.color="$COLOR" label="${TITLE}"
-    else
-      sketchybar --set "$NAME" icon.color="$COLOR" label="${TITLE} · ${DURATION}"
-    fi
-  else
-    sketchybar --set "$NAME" icon.color="$COLOR" label="${TITLE} · tra ${DURATION}"
-  fi
-else
-  sketchybar --set "$NAME" icon.color=0x44cdd6f4 label="Nessun evento"
-fi
+sketchybar("--set", NAME, f"icon.color={color}", f"label={label}")
 
 # Bottone "Partecipa"/"Termina tra Xm" — visibile solo quando l'evento in
 # primo piano ha un link alla videochiamata (finestra: da 5 minuti prima a
 # 15 minuti dopo l'inizio, gestita da calendar_notch tramite `spotlightEvent`).
 # Colore = brand del provider (verde Meet, blu Zoom, viola Teams), stesso
 # trattamento del bottone "Partecipa" nell'agenda espansa.
-if [ -n "$MEETING_URL" ]; then
-  BUTTON_COLOR="${MEETING_COLOR:-$COLOR}"
-  if [ "$IN_PROGRESS" = "1" ]; then
-    BUTTON_LABEL="Termina tra ${ENDS_IN}m"
-  else
-    BUTTON_LABEL="Partecipa"
-  fi
-  sketchybar --set calendar_join drawing=on label="$BUTTON_LABEL" \
-    label.color="$BUTTON_COLOR" background.color="0x29${BUTTON_COLOR#0xff}"
-else
-  sketchybar --set calendar_join drawing=off
-fi
+if meeting_url:
+    button_color = meeting_color or color
+    button_label = f"Termina tra {ends_in}m" if in_progress else "Partecipa"
+    tint_hex = button_color[4:] if button_color.startswith("0xff") else button_color
+    sketchybar(
+        "--set", "calendar_join", "drawing=on",
+        f"label={button_label}",
+        f"label.color={button_color}",
+        f"background.color=0x29{tint_hex}",
+    )
+else:
+    sketchybar("--set", "calendar_join", "drawing=off")
+PY
