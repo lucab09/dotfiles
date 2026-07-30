@@ -1874,6 +1874,85 @@ final class GoogleCalendarClient {
         calendarID: String,
         token: GoogleOAuthToken
     ) async throws -> GoogleEvent? {
+        // EventKit does not always expose the Google iCalUID. Depending on the
+        // macOS Calendar sync state it may expose the Google event id instead
+        // (and recurring instances often add a start-date suffix). Try the
+        // precise lookups first, then fall back to a constrained time/title
+        // search so RSVP keeps working after accounts are re-authorized.
+        for eventID in googleEventIDCandidates(from: event.externalIdentifier) {
+            if let googleEvent = try await eventByID(eventID, calendarID: calendarID, token: token) {
+                return googleEvent
+            }
+        }
+
+        for iCalUID in googleICalUIDCandidates(from: event.externalIdentifier) {
+            let candidates = try await events(in: calendarID, token: token, matchingICalUID: iCalUID, around: event)
+            if let match = bestMatch(in: candidates, for: event, allowTitleFallback: false) {
+                return match
+            }
+        }
+
+        let candidates = try await events(in: calendarID, token: token, matchingICalUID: nil, around: event)
+        return bestMatch(in: candidates, for: event, allowTitleFallback: true)
+    }
+
+    private func googleEventIDCandidates(from externalIdentifier: String) -> [String] {
+        var candidates: [String] = []
+        func append(_ value: String) {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty && !candidates.contains(trimmed) else { return }
+            candidates.append(trimmed)
+        }
+
+        append(externalIdentifier)
+        if let atIndex = externalIdentifier.firstIndex(of: "@") {
+            append(String(externalIdentifier[..<atIndex]))
+        }
+        if externalIdentifier.hasSuffix("@google.com") {
+            append(String(externalIdentifier.dropLast("@google.com".count)))
+        }
+        return candidates
+    }
+
+    private func googleICalUIDCandidates(from externalIdentifier: String) -> [String] {
+        var candidates: [String] = []
+        func append(_ value: String) {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty && !candidates.contains(trimmed) else { return }
+            candidates.append(trimmed)
+        }
+
+        append(externalIdentifier)
+        if !externalIdentifier.contains("@") {
+            append("\(externalIdentifier)@google.com")
+        }
+        return candidates
+    }
+
+    private func eventByID(_ eventID: String, calendarID: String, token: GoogleOAuthToken) async throws -> GoogleEvent? {
+        let eventURL = apiRoot
+            .appendingPathComponent("calendars")
+            .appendingPathComponent(calendarID)
+            .appendingPathComponent("events")
+            .appendingPathComponent(eventID)
+        do {
+            let data = try await authorizedData(for: URLRequest(url: eventURL), token: token, forbiddenMeansNotWritable: true)
+            return try decode(GoogleEvent.self, from: data)
+        } catch GoogleCalendarError.calendarNotWritable {
+            return nil
+        } catch GoogleCalendarError.api {
+            // A failed direct id lookup usually just means EventKit exposed a
+            // non-Google identifier. Keep trying iCalUID/time-based matching.
+            return nil
+        }
+    }
+
+    private func events(
+        in calendarID: String,
+        token: GoogleOAuthToken,
+        matchingICalUID iCalUID: String?,
+        around event: CalendarEventViewModel
+    ) async throws -> [GoogleEvent] {
         var pageToken: String?
         var candidates: [GoogleEvent] = []
         let formatter = ISO8601DateFormatter()
@@ -1888,33 +1967,80 @@ final class GoogleCalendarClient {
                 .appendingPathComponent("events")
             var components = URLComponents(url: eventsURL, resolvingAgainstBaseURL: false)!
             var queryItems = [
-                URLQueryItem(name: "iCalUID", value: event.externalIdentifier),
                 URLQueryItem(name: "singleEvents", value: "true"),
                 URLQueryItem(name: "showDeleted", value: "false"),
                 URLQueryItem(name: "timeMin", value: timeMin),
                 URLQueryItem(name: "timeMax", value: timeMax),
-                URLQueryItem(name: "maxResults", value: "50")
+                URLQueryItem(name: "maxResults", value: iCalUID == nil ? "250" : "50")
             ]
+            if let iCalUID {
+                queryItems.insert(URLQueryItem(name: "iCalUID", value: iCalUID), at: 0)
+            } else {
+                queryItems.append(URLQueryItem(name: "orderBy", value: "startTime"))
+            }
             if let pageToken { queryItems.append(URLQueryItem(name: "pageToken", value: pageToken)) }
             components.queryItems = queryItems
 
             let data: Data
             do {
-                data = try await authorizedData(for: URLRequest(url: components.url!), token: token)
+                data = try await authorizedData(
+                    for: URLRequest(url: components.url!),
+                    token: token,
+                    forbiddenMeansNotWritable: true
+                )
             } catch GoogleCalendarError.calendarNotWritable {
-                return nil
+                return []
             }
             let page: EventsPage = try decode(EventsPage.self, from: data)
             candidates.append(contentsOf: page.items ?? [])
             pageToken = page.nextPageToken
         } while pageToken != nil
 
-        if candidates.count == 1 { return candidates[0] }
-        return candidates.min { lhs, rhs in
-            eventDistance(lhs, from: event.startDate) < eventDistance(rhs, from: event.startDate)
-        }.flatMap { candidate in
-            eventDistance(candidate, from: event.startDate) <= 36 * 60 * 60 ? candidate : nil
+        return candidates
+    }
+
+    private func bestMatch(
+        in candidates: [GoogleEvent],
+        for event: CalendarEventViewModel,
+        allowTitleFallback: Bool
+    ) -> GoogleEvent? {
+        if !allowTitleFallback, candidates.count == 1, eventDistance(candidates[0], from: event.startDate) <= 36 * 60 * 60 {
+            return candidates[0]
         }
+
+        let wantedTitle = normalizedTitle(event.title)
+        let wantedEmail = event.currentUserParticipantEmail?.lowercased()
+        let scored = candidates.compactMap { candidate -> (event: GoogleEvent, score: Int)? in
+            let distance = eventDistance(candidate, from: event.startDate)
+            guard distance <= (allowTitleFallback ? 15 * 60 : 36 * 60 * 60) else { return nil }
+
+            var score = max(0, 120 - Int(distance / 60))
+            if candidate.iCalUID == event.externalIdentifier || candidate.id == event.externalIdentifier {
+                score += 200
+            }
+
+            if let wantedEmail, candidate.attendees?.contains(where: { $0.email?.lowercased() == wantedEmail }) == true {
+                score += 80
+            }
+
+            let candidateTitle = normalizedTitle(candidate.summary ?? "")
+            if !wantedTitle.isEmpty && candidateTitle == wantedTitle {
+                score += 100
+            } else if allowTitleFallback {
+                return nil
+            }
+
+            return score >= (allowTitleFallback ? 170 : 80) ? (candidate, score) : nil
+        }
+
+        return scored.max { lhs, rhs in lhs.score < rhs.score }?.event
+    }
+
+    private func normalizedTitle(_ title: String) -> String {
+        title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .lowercased()
     }
 
     private func patchResponse(
@@ -2007,8 +2133,15 @@ final class GoogleCalendarClient {
 
     private struct GoogleEvent: Decodable {
         let id: String
+        let iCalUID: String?
+        let summary: String?
         let start: GoogleEventDate?
         let originalStartTime: GoogleEventDate?
+        let attendees: [GoogleAttendee]?
+    }
+
+    private struct GoogleAttendee: Decodable {
+        let email: String?
     }
 
     private struct GoogleEventDate: Decodable {
@@ -2079,6 +2212,43 @@ private func detectedURLs(in text: String?) -> [URL] {
     return detector.matches(in: text, range: range).compactMap(\.url)
 }
 
+private func zoomWebJoinURL(from url: URL) -> URL {
+    let scheme = url.scheme?.lowercased() ?? ""
+    let host = url.host?.lowercased() ?? "zoom.us"
+    let pathComponents = url.pathComponents.filter { $0 != "/" }
+    let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    let queryItems = components?.queryItems ?? []
+
+    let meetingID: String? = {
+        if scheme.hasPrefix("zoom"), let confNo = queryItems.first(where: { $0.name.lowercased() == "confno" })?.value {
+            return confNo
+        }
+        if let joinIndex = pathComponents.firstIndex(where: { $0.lowercased() == "join" }),
+           joinIndex + 1 < pathComponents.count {
+            return pathComponents[joinIndex + 1]
+        }
+        if let meetingIndex = pathComponents.firstIndex(where: { ["j", "s", "wc"].contains($0.lowercased()) }),
+           meetingIndex + 1 < pathComponents.count,
+           pathComponents[meetingIndex + 1].lowercased() != "join" {
+            return pathComponents[meetingIndex + 1]
+        }
+        return nil
+    }()
+
+    guard let meetingID, !meetingID.isEmpty else { return url }
+
+    var webComponents = URLComponents()
+    webComponents.scheme = "https"
+    webComponents.host = host.isEmpty ? "zoom.us" : host
+    webComponents.path = "/wc/join/\(meetingID)"
+    let webQueryItems = queryItems.filter { item in
+        let name = item.name.lowercased()
+        return name != "confno" && name != "action"
+    }
+    webComponents.queryItems = webQueryItems.isEmpty ? nil : webQueryItems
+    return webComponents.url ?? url
+}
+
 private func meetingLink(for event: EKEvent) -> MeetingLinkViewModel? {
     var candidates: [(field: String, url: URL)] = []
     if let url = event.url { candidates.append(("url", url)) }
@@ -2106,7 +2276,8 @@ private func meetingLink(for event: EKEvent) -> MeetingLinkViewModel? {
         }
 
         if let provider {
-            return MeetingLinkViewModel(provider: provider, url: candidate.url, sourceField: candidate.field)
+            let url = provider == .zoom ? zoomWebJoinURL(from: candidate.url) : candidate.url
+            return MeetingLinkViewModel(provider: provider, url: url, sourceField: candidate.field)
         }
     }
     return nil
@@ -2264,14 +2435,22 @@ final class CalendarModel: ObservableObject {
     var currentEvent: CalendarEventViewModel? {
         todayEvents
             .filter { !$0.isAllDay && $0.startDate <= now && $0.endDate > now }
-            .min { $0.endDate < $1.endDate }
+            .min { lhs, rhs in
+                if isScheduledWithPeople(lhs) != isScheduledWithPeople(rhs) {
+                    return isScheduledWithPeople(lhs)
+                }
+                return lhs.endDate < rhs.endDate
+            }
     }
 
     /// Prossimo evento in agenda (oggi) quando non ce n'è uno in corso adesso.
+    /// Se il prossimo elemento è un blocco personale che si sovrappone a un
+    /// meeting con altre persone, nel widget compatto mostriamo il meeting.
     var nextUpcomingEvent: CalendarEventViewModel? {
-        todayEvents
-            .filter { !$0.isAllDay && $0.startDate > now }
-            .min { $0.startDate < $1.startDate }
+        guard let event = todayEvents
+            .filter({ !$0.isAllDay && $0.startDate > now })
+            .min(by: { $0.startDate < $1.startDate }) else { return nil }
+        return overlappingPeopleMeeting(for: event) ?? event
     }
 
     /// Evento "in primo piano" per il widget collassato: appare 5 minuti prima
@@ -2289,7 +2468,41 @@ final class CalendarModel: ObservableObject {
                     now >= $0.startDate.addingTimeInterval(-Self.joinLeadTime) &&
                     now <= $0.startDate.addingTimeInterval(Self.spotlightDuration)
             }
-            .min { $0.startDate < $1.startDate }
+            .min { lhs, rhs in
+                if isScheduledWithPeople(lhs) != isScheduledWithPeople(rhs) {
+                    return isScheduledWithPeople(lhs)
+                }
+                return lhs.startDate < rhs.startDate
+            }
+    }
+
+    /// Meeting con persone che ricade dentro il blocco personale attualmente
+    /// in corso. Serve a non lasciare il widget fermo su “Deep Work” / OOO
+    /// quando dentro quel blocco sta per iniziare una call reale.
+    var priorityMeetingDuringCurrentPersonalBlock: CalendarEventViewModel? {
+        guard let event = currentEvent, !isScheduledWithPeople(event) else { return nil }
+        return overlappingPeopleMeeting(for: event)
+    }
+
+    private func isScheduledWithPeople(_ event: CalendarEventViewModel) -> Bool {
+        !event.attendees.isEmpty
+    }
+
+    private func overlappingPeopleMeeting(for event: CalendarEventViewModel) -> CalendarEventViewModel? {
+        guard !isScheduledWithPeople(event) else { return nil }
+        return todayEvents
+            .filter {
+                !$0.isAllDay &&
+                    $0.id != event.id &&
+                    isScheduledWithPeople($0) &&
+                    $0.endDate > now &&
+                    $0.startDate < event.endDate &&
+                    event.startDate < $0.endDate
+            }
+            .min { lhs, rhs in
+                if lhs.startDate != rhs.startDate { return lhs.startDate < rhs.startDate }
+                return lhs.endDate < rhs.endDate
+            }
     }
 
     private var nowTimer: Timer?
@@ -2355,6 +2568,19 @@ final class CalendarModel: ObservableObject {
                 }
             }
             payload = spotlightPayload
+        } else if let event = priorityMeetingDuringCurrentPersonalBlock {
+            let inProgress = event.startDate <= now
+            let remainingSeconds = inProgress
+                ? event.endDate.timeIntervalSince(now)
+                : event.startDate.timeIntervalSince(now)
+            let remainingMinutes = max(1, Int(remainingSeconds.rounded(.up)) / 60)
+            payload = [
+                "has_event": true,
+                "title": event.title,
+                "color": event.calendarColorHex,
+                "remaining_minutes": remainingMinutes,
+                "in_progress": inProgress
+            ]
         } else if let event = currentEvent {
             let remainingSeconds = event.endDate.timeIntervalSince(now)
             let remainingMinutes = max(1, Int(remainingSeconds.rounded(.up)) / 60)
@@ -3116,6 +3342,94 @@ struct AttendeeAvatarStack: View {
     }
 }
 
+struct CalendarSourceIcon: View {
+    let color: Color
+
+    var body: some View {
+        HexagonOutline()
+            .fill(color)
+            .frame(width: 13, height: 13)
+    }
+
+    private struct HexagonOutline: Shape {
+        func path(in rect: CGRect) -> Path {
+            let points = [
+                CGPoint(x: 11.7, y: 1.1732),
+                CGPoint(x: 12.3, y: 1.17321),
+                CGPoint(x: 21.2263, y: 6.3268),
+                CGPoint(x: 21.5263, y: 6.84641),
+                CGPoint(x: 21.5263, y: 17.1536),
+                CGPoint(x: 21.2263, y: 17.6732),
+                CGPoint(x: 12.3, y: 22.8268),
+                CGPoint(x: 11.7, y: 22.8268),
+                CGPoint(x: 2.77372, y: 17.6732),
+                CGPoint(x: 2.47372, y: 17.1536),
+                CGPoint(x: 2.47372, y: 6.84641),
+                CGPoint(x: 2.77372, y: 6.32679)
+            ]
+            let scale = min(rect.width, rect.height) / 24
+            let xOffset = rect.midX - 12 * scale
+            let yOffset = rect.midY - 12 * scale
+            func map(_ point: CGPoint) -> CGPoint {
+                CGPoint(x: xOffset + point.x * scale, y: yOffset + point.y * scale)
+            }
+
+            var path = Path()
+            guard let first = points.first else { return path }
+            path.move(to: map(first))
+            for point in points.dropFirst() { path.addLine(to: map(point)) }
+            path.closeSubpath()
+            return path
+        }
+    }
+}
+
+struct CalendarEventIcon: View {
+    var body: some View {
+        Glyph()
+            .stroke(.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+            .frame(width: 24, height: 24)
+    }
+
+    private struct Glyph: Shape {
+        func path(in rect: CGRect) -> Path {
+            let scale = min(rect.width, rect.height) / 24
+            let xOffset = rect.midX - 12 * scale
+            let yOffset = rect.midY - 12 * scale
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: xOffset + x * scale, y: yOffset + y * scale)
+            }
+
+            var path = Path()
+            path.move(to: point(15, 4))
+            path.addLine(to: point(15, 2))
+            path.move(to: point(15, 4))
+            path.addLine(to: point(15, 6))
+            path.move(to: point(15, 4))
+            path.addLine(to: point(10.5, 4))
+            path.move(to: point(3, 10))
+            path.addLine(to: point(3, 19))
+            path.addCurve(to: point(5, 21), control1: point(3, 20.1046), control2: point(3.89543, 21))
+            path.addLine(to: point(19, 21))
+            path.addCurve(to: point(21, 19), control1: point(20.1046, 21), control2: point(21, 20.1046))
+            path.addLine(to: point(21, 10))
+            path.addLine(to: point(3, 10))
+            path.closeSubpath()
+            path.move(to: point(3, 10))
+            path.addLine(to: point(3, 6))
+            path.addCurve(to: point(5, 4), control1: point(3, 4.89543), control2: point(3.89543, 4))
+            path.addLine(to: point(7, 4))
+            path.move(to: point(7, 2))
+            path.addLine(to: point(7, 6))
+            path.move(to: point(21, 10))
+            path.addLine(to: point(21, 6))
+            path.addCurve(to: point(19, 4), control1: point(21, 4.89543), control2: point(20.1046, 4))
+            path.addLine(to: point(18.5, 4))
+            return path
+        }
+    }
+}
+
 struct EventRow: View {
     let event: CalendarEventViewModel
     let rsvpState: RSVPUpdateState
@@ -3134,15 +3448,11 @@ struct EventRow: View {
             HStack(spacing: 8) {
                 Button(action: onToggle) {
                     HStack(spacing: 10) {
-                        Circle()
-                            .fill(event.calendarColor)
-                            .frame(width: 7, height: 7)
+                        CalendarSourceIcon(color: event.calendarColor)
+                            .frame(width: 15, height: 15)
 
                         if event.attendees.isEmpty {
-                            Image(systemName: "calendar")
-                                .font(.custom("Google Sans Flex 18pt", size: 20))
-                                .fontWeight(.medium)
-                                .foregroundStyle(event.calendarColor)
+                            CalendarEventIcon()
                                 .frame(width: 58, alignment: .leading)
                         } else {
                             AttendeeAvatarStack(attendees: event.attendees)
