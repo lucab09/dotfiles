@@ -98,35 +98,19 @@ sketchybar --add item weather left \
              update_freq=900 \
              padding_left=0 \
              padding_right=0 \
-             icon.font="Material Symbols Rounded:Regular:18.0" \
-             icon.color=0xffcac4d0 \
-             icon.padding_left=12 \
-             icon.padding_right=4 \
+             icon.drawing=off \
+             icon.padding_left=0 \
+             icon.padding_right=0 \
              label.font="Google Sans Flex 18pt:Medium:16.0" \
              label.color=0xffe6e1e5 \
-             label.padding_left=0 \
-             label.padding_right=6 \
+             label.padding_left=12 \
+             label.padding_right=12 \
              background.drawing=off \
-             script="$PLUGIN_DIR/weather.sh"
+             script="$PLUGIN_DIR/weather.sh" \
+             click_script="$PLUGIN_DIR/weather_popup_toggle.sh" \
+             --subscribe weather mouse.entered mouse.exited
 
-# Qualità dell'aria — chip colorato a semaforo (verde/giallo/rosso) dentro
-# la stessa pillola del meteo; aggiornato da weather.sh (riusa la posizione
-# già risolta).
-sketchybar --add item air_quality left \
-           --set air_quality \
-             padding_left=4 \
-             padding_right=8 \
-             icon.drawing=off \
-             label.font="Google Sans Flex 18pt:Semibold:12.0" \
-             label.color=0xff79d491 \
-             label.padding_left=10 \
-             label.padding_right=10 \
-             background.drawing=on \
-             background.color=0x2979d491 \
-             background.corner_radius=10 \
-             background.height=22
-
-sketchybar --add bracket weather_pill weather air_quality \
+sketchybar --add bracket weather_pill weather \
            --set weather_pill \
              background.drawing=on \
              background.color=0xff49454f \
