@@ -43,7 +43,8 @@ sketchybar --add item left_gap_edge left \
              label.drawing=off \
              background.drawing=off
 
-# Data — primo elemento della barra, occupa il lato sinistro della pillola
+# Data e ora — pillola blu unica; l'ora usa lo stesso trattamento della data
+# e i due punti lampeggiano ogni secondo.
 sketchybar --add item clock_date left \
            --set clock_date \
              update_freq=60 \
@@ -51,34 +52,41 @@ sketchybar --add item clock_date left \
              padding_right=0 \
              icon.drawing=off \
              label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffe6e1e5 \
+             label.color=0xfff7fbff \
              label.padding_left=12 \
              label.padding_right=6 \
              background.drawing=off \
              script="$PLUGIN_DIR/clock_date.sh"
 
-# Ora — chip arancione dentro la stessa pillola della data (stesso
-# trattamento dell'AQI dentro il widget meteo).
+sketchybar --add item clock_separator left \
+           --set clock_separator \
+             padding_left=0 \
+             padding_right=0 \
+             icon.drawing=off \
+             label="|" \
+             label.font="Google Sans Flex 18pt:Medium:14.0" \
+             label.color=0x99f7fbff \
+             label.padding_left=0 \
+             label.padding_right=6 \
+             background.drawing=off
+
 sketchybar --add item clock_time left \
            --set clock_time \
-             update_freq=30 \
-             padding_left=4 \
-             padding_right=8 \
+             update_freq=1 \
+             padding_left=0 \
+             padding_right=0 \
              icon.drawing=off \
-             label.font="Google Sans Flex 18pt:Bold:14.0" \
-             label.color=0xfff2a65a \
-             label.padding_left=10 \
-             label.padding_right=10 \
-             background.drawing=on \
-             background.color=0x29f2a65a \
-             background.corner_radius=10 \
-             background.height=22 \
+             label.font="Google Sans Flex 18pt:Semibold:16.0" \
+             label.color=0xfff7fbff \
+             label.padding_left=0 \
+             label.padding_right=12 \
+             background.drawing=off \
              script="$PLUGIN_DIR/clock_time.sh"
 
-sketchybar --add bracket clock_pill clock_date clock_time \
+sketchybar --add bracket clock_pill clock_date clock_separator clock_time \
            --set clock_pill \
              background.drawing=on \
-             background.color=0xff49454f \
+             background.color=0xff2d6cdf \
              background.corner_radius=16 \
              background.height=34
 
@@ -101,7 +109,7 @@ sketchybar --add item weather left \
              icon.drawing=off \
              icon.padding_left=0 \
              icon.padding_right=0 \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
+             label.font="Google Sans Flex 18pt:Semibold:16.0" \
              label.color=0xffe6e1e5 \
              label.padding_left=12 \
              label.padding_right=12 \
@@ -135,7 +143,7 @@ if [ "$HAS_NOTCH" != "1" ]; then
                icon.color=0x44cdd6f4 \
                icon.padding_left=12 \
                icon.padding_right=6 \
-               label.font="Google Sans Flex 18pt:Medium:16.0" \
+               label.font="Google Sans Flex 18pt:Semibold:16.0" \
                label.color=0xffe6e1e5 \
                label.padding_left=0 \
                label.padding_right=12 \
