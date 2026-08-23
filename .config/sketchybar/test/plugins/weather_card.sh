@@ -1,10 +1,14 @@
 #!/bin/sh
 # Card meteo quadrata, allineata al widget meteo di produzione
 # (.config/sketchybar/plugins/weather.sh): stessi dati, stesso refresh
-# (state file condiviso, riusa quello script per il fetch), stessi glifi
-# icona/colori, e sfondo della card = pill_color di produzione (gradiente
-# per temperatura, non per condizione). Il rendering pixel-preciso è
-# delegato a card_render.
+# (state file condiviso, riusa quello script per il fetch). Icona: stesso
+# set "ben definito" usato ovunque nella bar (cpu.sh/mem.sh/vpn.sh) — font
+# Material Symbols Rounded con il nome icona direttamente dallo state
+# (weather.sh calcola già la categoria come nome icona valido, es.
+# "partly_cloudy_night"), non più i glifi Unicode custom usati prima.
+# Sfondo statico #252422, stesso colore della card orologio (design system
+# condiviso, non più il gradiente per temperatura). Il rendering
+# pixel-preciso è delegato a card_render.
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -31,31 +35,10 @@ try:
 except Exception:
     s = {}
 
-icon = s.get('icon', 'cloud')
-
-# Stessa mappatura glifo/font di weather.sh (widget_icon/widget_font), solo
-# il nome famiglia (senza ":peso:size", lo gestisce l'auto-fit di card_render).
-if icon == 'sunny':
-    glyph, glyph_font = '☼', 'Apple Symbols'
-elif icon in ('weather_snowy', 'cloudy_snowing'):
-    glyph, glyph_font = '❄', 'Apple Symbols'
-elif icon in ('rainy', 'weather_mix'):
-    glyph, glyph_font = '☔︎', 'Apple Symbols'
-elif icon == 'cloud':
-    glyph, glyph_font = '☁︎', 'Apple Symbols'
-elif icon in ('partly_cloudy_day', 'partly_cloudy_night'):
-    glyph, glyph_font = '⛅︎', 'Apple Symbols'
-elif icon == 'foggy':
-    glyph, glyph_font = '≋', 'Apple Symbols'
-elif icon == 'thunderstorm':
-    glyph, glyph_font = '☇', 'Apple Symbols'
-elif icon == 'bedtime':
-    glyph, glyph_font = '☾', 'Apple Symbols'
-else:
-    glyph, glyph_font = icon, 'Material Symbols Rounded'
-
+glyph = s.get('icon', 'cloud')
+glyph_font = 'Material Symbols Rounded'
 icon_color = s.get('icon_color') or '0xffcac4d0'
-pill_color = s.get('pill_color') or '0xff49454f'
+background = '0xff252422'
 
 temp = s.get('temperature')
 feels = s.get('apparent_temperature')
@@ -69,13 +52,13 @@ def fmt(v):
 lines = [
     [{"t": fmt(temp), "b": True}, {"t": " ora", "b": False}],
     [{"t": "a ", "b": False}, {"t": city, "b": True}],
-    [{"t": "percepiti ", "b": False}, {"t": fmt(feels), "b": True}],
-    [{"t": f"{glyph} ", "font": glyph_font, "color": icon_color}, {"t": condition, "b": True}],
+    [{"t": "percepiti ", "b": False}, {"t": fmt(feels), "b": True, "color": icon_color}],
+    [{"t": glyph, "font": glyph_font, "color": icon_color}, {"t": " " + condition, "b": True}],
 ]
 if isinstance(humidity, (int, float)):
     lines.append([{"t": "umidità ", "b": False}, {"t": f"{humidity}%", "b": True}])
 
-card = {"background": pill_color, "lines": lines}
+card = {"background": background, "lines": lines}
 
 proc = subprocess.run([renderer, out_png, side, "3"], input=json.dumps(card).encode())
 sys.exit(proc.returncode)

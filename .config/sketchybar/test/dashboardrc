@@ -28,7 +28,7 @@ echo "$BAR_HEIGHT" > /tmp/sketchybar_test_bar_height
 # (altezza sempre fissa, mai un resize, quindi nessun frame "a bande").
 sketchybar --bar position=top \
                height=$BAR_HEIGHT \
-               blur_radius=30 \
+               blur_radius=0 \
                color=0x00000000 \
                border_width=0 \
                shadow=off \
@@ -48,22 +48,12 @@ sketchybar --default \
   background.drawing=off
 
 ##### Colonna 1: orologio (span 2/12, stessi proporzioni della card meteo) #####
-CLOCK_RADIUS=$((CARD_SIDE * 22 / 100))
-CLOCK_FONT_SIZE=$((CARD_SIDE * 66 / 1000))
 sketchybar --add item clock_dashboard left \
            --set clock_dashboard \
              associated_space=1 \
              width=$CARD_SIDE \
-             align=center \
              update_freq=1 \
-             label.font="Google Sans Flex 18pt:Bold:${CLOCK_FONT_SIZE}.0" \
-             label.color=0xfff7fbff \
-             background.drawing=on \
-             background.color=0xff2d6cdf \
-             background.corner_radius=$CLOCK_RADIUS \
-             background.height=$CARD_SIDE \
-             background.y_offset=0 \
-             script="$PLUGIN_DIR/clock_dashboard.sh" \
+             script="$PLUGIN_DIR/clock_dashboard.sh $CARD_SIDE" \
            --subscribe clock_dashboard forced
 
 ##### Gap tra le card #####

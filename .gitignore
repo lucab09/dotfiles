@@ -11,3 +11,4 @@
 .config/sketchybar/plugins/geolocate
 .config/sketchybar/plugins/Geolocate.app
 .config/sketchybar/test/plugins/card_render
+.config/sketchybar/test/plugins/clock_card_render
