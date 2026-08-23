@@ -1,0 +1,90 @@
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+
+##### Griglia a 12 colonne #####
+# Larghezza schermo reale (non solo l'area utile), stesso trucco usato per
+# calcolare i layout: bounds della finestra del desktop via Finder.
+SCREEN_W=$(osascript -e 'tell application "Finder" to get bounds of window of desktop' | awk -F', ' '{print $3}')
+
+# Stesso margine di yabairc (top/bottom/left/right_padding e window_gap
+# sono tutti 12), così le card si allineano visivamente alle finestre tiled.
+MARGIN=12
+GAP=12
+
+USABLE_W=$((SCREEN_W - MARGIN * 2))
+COL_W=$((USABLE_W / 12))
+CARD_SPAN=2
+CARD_SIDE=$((COL_W * CARD_SPAN))
+BAR_HEIGHT=$((CARD_SIDE + MARGIN * 2))
+echo "$BAR_HEIGHT" > /tmp/sketchybar_test_bar_height
+
+##### Bar #####
+# La finestra della bar è comunque presente su tutte le Space (come la vera
+# menu bar: non c'è modo di confinarla, "sticky" controlla solo lo scroll
+# degli item durante lo swipe). Per il disegno: sfondo trasparente + ogni
+# item con associated_space=1, gestito da SketchyBar stessa in sync con lo
+# swipe (niente flash). Ma la FINESTRA resta grande anche invisibile e
+# ruba i click sotto di sé: un segnale yabai space_changed (space_gate.sh)
+# la trasla fuori dallo schermo con y_offset fuori dalla scrivania target
+# (altezza sempre fissa, mai un resize, quindi nessun frame "a bande").
+sketchybar --bar position=top \
+               height=$BAR_HEIGHT \
+               blur_radius=30 \
+               color=0x00000000 \
+               border_width=0 \
+               shadow=off \
+               margin=0 \
+               padding_left=$MARGIN \
+               padding_right=$MARGIN \
+               y_offset=0 \
+               topmost=window
+
+##### Defaults #####
+sketchybar --default \
+  padding_left=0 \
+  padding_right=0 \
+  icon.drawing=off \
+  label.font="Google Sans Flex 18pt:Semibold:15.0" \
+  label.color=0xffcdd6f4 \
+  background.drawing=off
+
+##### Colonna 1: orologio (span 2/12, stessi proporzioni della card meteo) #####
+CLOCK_RADIUS=$((CARD_SIDE * 22 / 100))
+CLOCK_FONT_SIZE=$((CARD_SIDE * 66 / 1000))
+sketchybar --add item clock_dashboard left \
+           --set clock_dashboard \
+             associated_space=1 \
+             width=$CARD_SIDE \
+             align=center \
+             update_freq=1 \
+             label.font="Google Sans Flex 18pt:Bold:${CLOCK_FONT_SIZE}.0" \
+             label.color=0xfff7fbff \
+             background.drawing=on \
+             background.color=0xff2d6cdf \
+             background.corner_radius=$CLOCK_RADIUS \
+             background.height=$CARD_SIDE \
+             background.y_offset=0 \
+             script="$PLUGIN_DIR/clock_dashboard.sh" \
+           --subscribe clock_dashboard forced
+
+##### Gap tra le card #####
+sketchybar --add item gap_1 left \
+           --set gap_1 associated_space=1 width=$GAP
+
+##### Colonna 2: meteo, card design-system (quadrata, span 2/12) #####
+sketchybar --add item weather_card left \
+           --set weather_card \
+             associated_space=1 \
+             width=$CARD_SIDE \
+             update_freq=900 \
+             script="$PLUGIN_DIR/weather_card.sh $CARD_SIDE" \
+           --subscribe weather_card forced
+
+sketchybar --update
+
+##### Space gate: geometria reale legata alla scrivania attiva #####
+yabai -m signal --remove dashboard_test_gate >/dev/null 2>&1
+yabai -m signal --add label=dashboard_test_gate event=space_changed \
+  action="$PLUGIN_DIR/space_gate.sh"
+
+CURRENT_SPACE=$(yabai -m query --spaces --space 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['index'])" 2>/dev/null)
+YABAI_SPACE_INDEX="$CURRENT_SPACE" "$PLUGIN_DIR/space_gate.sh"

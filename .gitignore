@@ -10,3 +10,4 @@
 .config/sketchybar/plugins/weather_popup
 .config/sketchybar/plugins/geolocate
 .config/sketchybar/plugins/Geolocate.app
+.config/sketchybar/test/plugins/card_render
