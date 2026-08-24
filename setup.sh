@@ -3,6 +3,7 @@ set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HOME/.config"
+PI_AGENT_EXTENSIONS="$HOME/.pi/agent/extensions"
 OAUTH_DIR="$HOME/Library/Application Support/Calendar Notch"
 OAUTH_DEST="$OAUTH_DIR/google-oauth-client.json"
 
@@ -207,6 +208,8 @@ for entry in "$DOTFILES/.config"/*/; do
     symlink "$entry" "$CONFIG/$(basename "$entry")"
 done
 symlink "$DOTFILES/.config/starship.toml" "$CONFIG/starship.toml"
+mkdir -p "$PI_AGENT_EXTENSIONS"
+symlink "$DOTFILES/pi/extensions/native-status-bar.ts" "$PI_AGENT_EXTENSIONS/native-status-bar.ts"
 
 echo "==> Configuring Calendar Notch OAuth..."
 install_oauth_config

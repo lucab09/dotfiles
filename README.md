@@ -10,6 +10,7 @@ Reproducible macOS configuration managed with symlinks.
 - WezTerm
 - Zed
 - Fish, Starship, Git, and personal tool configuration
+- Native pi status bar with model, context, Git changes, thinking level, and subscription limits
 
 ## New Mac setup
 
@@ -26,7 +27,7 @@ cd ~/dotfiles
 1. checks Xcode Command Line Tools and prompts for installation when missing;
 2. installs Homebrew when needed;
 3. installs the applications, tools, and fonts from `Brewfile`;
-4. backs up existing config directories and creates symlinks into this repository;
+4. backs up existing config directories and creates symlinks into this repository, including the global pi status-bar extension;
 5. configures the Calendar Notch OAuth client;
 6. compiles and signs all Swift plugins for the current Mac;
 7. starts or restarts Yabai and SketchyBar.
