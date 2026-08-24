@@ -5,6 +5,12 @@ GEOLOCATE_APP="$PLUGIN_DIR/Geolocate.app"
 GEO_CACHE="$HOME/Library/Caches/sketchybar-geolocation.json"
 STATE_FILE="/tmp/sketchybar_weather_state.json"
 
+# Evita che un endpoint meteo non raggiungibile lasci processi del widget
+# bloccati e si accumuli dopo un reload di SketchyBar.
+curl() {
+  command curl --connect-timeout 3 --max-time 8 "$@"
+}
+
 case "$SENDER" in
   mouse.entered|mouse.exited)
     "$PLUGIN_DIR/weather_popup_hover.sh"
@@ -12,12 +18,34 @@ case "$SENDER" in
     ;;
 esac
 
-# Posizione reale del Mac via CoreLocation. Deve girare come vera .app
-# (lanciata con `open`), altrimenti il permesso non viene mai richiesto:
-# `open` non inoltra lo stdout, quindi legge il risultato da un file di cache.
+# Posizione reale del Mac via CoreLocation. Il helper è una vera .app, così
+# macOS può applicare il consenso alla localizzazione. Non usiamo `open -W`:
+# le app LSUIElement non possono essere attese da LaunchServices. Aspettiamo
+# invece che il helper aggiorni atomicamente il file di cache.
 if [ -d "$GEOLOCATE_APP" ]; then
-  open -W -g "$GEOLOCATE_APP" 2>/dev/null
-  COORDS=$(cat "$GEO_CACHE" 2>/dev/null)
+  CACHED_COORDS=$(cat "$GEO_CACHE" 2>/dev/null)
+  CACHE_SIGNATURE=$(printf '%s' "$CACHED_COORDS" | cksum 2>/dev/null)
+  open -g "$GEOLOCATE_APP" 2>/dev/null
+
+  # Una posizione già in cache può essere usata subito; il helper la
+  # aggiorna in background. Al primo avvio invece aspettiamo al massimo 12 s.
+  if [ -z "$CACHED_COORDS" ]; then
+    ATTEMPTS=0
+    while [ "$ATTEMPTS" -lt 48 ]; do
+      CURRENT_COORDS=$(cat "$GEO_CACHE" 2>/dev/null)
+      CURRENT_SIGNATURE=$(printf '%s' "$CURRENT_COORDS" | cksum 2>/dev/null)
+      if [ -n "$CURRENT_COORDS" ] && [ "$CURRENT_SIGNATURE" != "$CACHE_SIGNATURE" ]; then
+        COORDS=$CURRENT_COORDS
+        break
+      fi
+      sleep 0.25
+      ATTEMPTS=$((ATTEMPTS + 1))
+    done
+  fi
+
+  # Se il fix della posizione non arriva entro 12 secondi, usa l'ultima
+  # posizione reale nota: è preferibile al fallback IP, spesso impreciso.
+  COORDS=${COORDS:-$CACHED_COORDS}
   LAT=$(echo "$COORDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['lat'])" 2>/dev/null)
   LON=$(echo "$COORDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['lon'])" 2>/dev/null)
 fi

@@ -18,7 +18,7 @@ final class LocationFetcher: NSObject, CLLocationManagerDelegate {
 
     func start() {
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
 
         switch manager.authorizationStatus {
         case .notDetermined:
@@ -27,6 +27,10 @@ final class LocationFetcher: NSObject, CLLocationManagerDelegate {
             manager.startUpdatingLocation()
         default:
             finish(nil)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            self?.finish(nil)
         }
     }
 
@@ -42,10 +46,18 @@ final class LocationFetcher: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        finish(locations.last)
+        guard let location = locations.last, location.horizontalAccuracy >= 0 else { return }
+        finish(location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // kCLErrorLocationUnknown è transitorio: locationd può restituirlo
+        // subito dopo la sottoscrizione, prima di avere una posizione Wi‑Fi/GPS.
+        // Lasciamo quindi la richiesta attiva fino al timeout.
+        if (error as NSError).domain == kCLErrorDomain,
+           (error as NSError).code == CLError.Code.locationUnknown.rawValue {
+            return
+        }
         finish(nil)
     }
 
@@ -67,9 +79,4 @@ final class LocationFetcher: NSObject, CLLocationManagerDelegate {
 let fetcher = LocationFetcher()
 fetcher.start()
 
-DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
-    exit(1)
-}
-
-RunLoop.main.run(until: Date(timeIntervalSinceNow: 9))
-exit(1)
+RunLoop.main.run()
