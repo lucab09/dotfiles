@@ -67,6 +67,7 @@ func detectNetwork() -> DetectedState {
 
 final class IPCServer {
     var onToggle: ((CGFloat) -> Void)?
+    var onHide: (() -> Void)?
     var onState:  ((String, Bool, Bool, Bool, Bool, Bool) -> Void)?
 
     func start() {
@@ -107,6 +108,8 @@ final class IPCServer {
         if cmd == "toggle" {
             let x = CGFloat(Double(parts.dropFirst().first ?? "0") ?? 0)
             DispatchQueue.main.async { self.onToggle?(x) }
+        } else if cmd == "hide" {
+            DispatchQueue.main.async { self.onHide?() }
         } else if cmd == "state" {
             var d: [String: String] = [:]
             parts.dropFirst().forEach { kv in
@@ -327,6 +330,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         ipc.onToggle = { [weak self] x in self?.toggle(anchorX: x) }
+        ipc.onHide = { [weak self] in self?.hide() }
         ipc.onState  = { [weak self] ssid, wifi, ts, nord, aws, corp in
             guard let s = self?.state else { return }
             s.ssid = ssid; s.wifiEnabled = wifi
@@ -370,11 +374,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func show(anchorX: CGFloat) {
         guard let p = panel, let h = hosting else { return }
         let H = max(h.fittingSize.height, 200)
-        let screen = NSScreen.main!
-        // Bar: height=36, y_offset=6 in sketchybarrc
-        let barBottom = screen.frame.height - 42
-        let px = screen.frame.width - popupWidth - 10
-        let py = barBottom - H - 8
+        let screen = NSScreen.screens.first(where: {
+            anchorX >= $0.frame.minX && anchorX <= $0.frame.maxX
+        }) ?? NSScreen.main!
+        // La barra Swift è alta 50 pt ed è aderente al bordo superiore.
+        let barBottom = screen.frame.maxY - 50
+        // Il popup si sviluppa verso sinistra: il bordo destro coincide
+        // esattamente con il bordo destro dell'icona che lo ha aperto.
+        let px = anchorX - popupWidth
+        let py = barBottom - H - 6
         p.setFrame(NSRect(x: px, y: py, width: popupWidth, height: H), display: true)
         p.makeKeyAndOrderFront(nil)
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in

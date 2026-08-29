@@ -80,11 +80,17 @@ final class WeatherPopupApp: NSObject, NSApplicationDelegate {
     private func showPanel() {
         let state = WeatherState.load()
         let content = WeatherPopupView(state: state)
-        let size = NSSize(width: 392, height: 404)
+        // WeatherPopupView aggiunge 1 pt di padding trasparente per lato.
+        // Usiamo qui la dimensione finale, così il bordo destro resta ancorato
+        // esattamente al widget anche dopo il fitting di NSHostingView.
+        let size = NSSize(width: 394, height: 406)
         let launchMouse = NSEvent.mouseLocation
+        let configuredAnchorX = ProcessInfo.processInfo.environment["WEATHER_POPUP_ANCHOR_X"]
+            .flatMap(Double.init)
+            .map { CGFloat($0) }
         anchorRect = NSRect(x: launchMouse.x - 130, y: launchMouse.y - 30, width: 260, height: 70)
         launchedAt = Date()
-        let frame = panelFrame(size: size, mouse: launchMouse)
+        let frame = panelFrame(size: size, mouse: launchMouse, anchorRightX: configuredAnchorX)
         let panel = NSPanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -109,11 +115,20 @@ final class WeatherPopupApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func panelFrame(size: NSSize, mouse: CGPoint) -> NSRect {
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+    private func panelFrame(size: NSSize, mouse: CGPoint, anchorRightX: CGFloat?) -> NSRect {
+        let screen = NSScreen.screens.first { screen in
+            if let anchorRightX {
+                return anchorRightX >= screen.frame.minX && anchorRightX <= screen.frame.maxX
+            }
+            return screen.frame.contains(mouse)
+        } ?? NSScreen.main
         let frame = screen?.frame ?? .init(x: 0, y: 0, width: 1440, height: 900)
-        let x = min(max(frame.minX + 18, mouse.x - 72), frame.maxX - size.width - 18)
-        let y = frame.maxY - size.height - 46
+        // NSHostingView rifinisce il frame accessibile eliminando il padding
+        // trasparente: compensiamo l'inset per mantenere il bordo visibile
+        // esattamente sull'ancora.
+        let proposedX = anchorRightX.map { $0 - size.width + 2 } ?? (mouse.x - 72)
+        let x = min(max(frame.minX, proposedX), frame.maxX - size.width)
+        let y = frame.maxY - size.height - 56
         return NSRect(origin: CGPoint(x: x, y: y), size: size)
     }
 

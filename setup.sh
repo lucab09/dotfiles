@@ -173,6 +173,10 @@ compile_swift_plugins() {
 
         echo "  ok: $name"
     done
+
+    echo "  compiling: swift_bar"
+    bash "$DOTFILES/.config/sketchybar/swift_bar/build.sh"
+    echo "  ok: swift_bar"
 }
 
 restart_brew_service() {

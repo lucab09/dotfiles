@@ -4109,9 +4109,11 @@ final class NotchPanelController: NSObject {
         guard let screen = notchScreen else { return closedFrame }
         let width = min(expandedWidth, screen.frame.width - 24)
         let height = min(expandedHeight, screen.frame.height - 24)
+        let barHeight: CGFloat = 50
+        let popupGap: CGFloat = 6
         return NSRect(
-            x: screen.frame.midX - width / 2,
-            y: screen.frame.maxY - height,
+            x: screen.frame.minX,
+            y: screen.frame.maxY - barHeight - popupGap - height,
             width: width,
             height: height
         )

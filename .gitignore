@@ -10,5 +10,6 @@
 .config/sketchybar/plugins/weather_popup
 .config/sketchybar/plugins/geolocate
 .config/sketchybar/plugins/Geolocate.app
+.config/sketchybar/swift_bar/swift_bar
 .config/sketchybar/test/plugins/card_render
 .config/sketchybar/test/plugins/clock_card_render

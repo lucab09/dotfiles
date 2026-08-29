@@ -1,334 +1,38 @@
+#!/usr/bin/env sh
+
+CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/sketchybar}"
 PLUGIN_DIR="$CONFIG_DIR/plugins"
+SWIFT_BAR_DIR="$CONFIG_DIR/swift_bar"
 
-##### Bar #####
-sketchybar --bar position=top \
-               height=36 \
-               blur_radius=0 \
-               color=0x00000000 \
-               border_width=0 \
-               shadow=off \
-               margin=8 \
-               padding_left=0 \
-               padding_right=0 \
-               y_offset=8 \
-               topmost=window
+# SketchyBar resta attivo soltanto come supervisore dei processi. La vecchia
+# barra nativa e tutti i suoi item vengono rimossi: l'unica UI visibile è la
+# barra Swift/AppKit avviata qui sotto.
+sketchybar --remove '/.*/' 2>/dev/null || true
+sketchybar --bar drawing=off
 
-##### Defaults #####
-sketchybar --default \
-  padding_left=4 \
-  padding_right=4 \
-  icon.font="JetBrainsMono Nerd Font:Bold:15.0" \
-  label.font="Google Sans Flex 18pt:Semibold:15.0" \
-  icon.color=0xffcdd6f4 \
-  label.color=0xffcdd6f4 \
-  icon.padding_left=8 \
-  icon.padding_right=4 \
-  label.padding_left=0 \
-  label.padding_right=8 \
-  background.drawing=on \
-  background.color=0xff313244 \
-  background.corner_radius=14 \
-  background.height=28
+# Chiude eventuali popup rimasti aperti durante un reload.
+pkill -f '^.*/weather_popup$' 2>/dev/null || true
 
-##### LEFT #####
+# Barra principale Swift.
+"$SWIFT_BAR_DIR/run.sh" >>/tmp/sketchybar_swift_bar_supervisor.log 2>&1
 
-# Spaziatura uniforme dal bordo sinistro dello schermo (stesso trattamento
-# dei gap a spaziatore usati sul lato destro).
-sketchybar --add item left_gap_edge left \
-           --set left_gap_edge \
-             width=8 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.drawing=off \
-             background.drawing=off
-
-# Data e ora — pillola blu unica; l'ora usa lo stesso trattamento della data
-# e i due punti lampeggiano ogni secondo.
-sketchybar --add item clock_date left \
-           --set clock_date \
-             update_freq=60 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xfff7fbff \
-             label.padding_left=12 \
-             label.padding_right=6 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/clock_date.sh"
-
-sketchybar --add item clock_separator left \
-           --set clock_separator \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label="|" \
-             label.font="Google Sans Flex 18pt:Medium:14.0" \
-             label.color=0x99f7fbff \
-             label.padding_left=0 \
-             label.padding_right=6 \
-             background.drawing=off
-
-sketchybar --add item clock_time left \
-           --set clock_time \
-             update_freq=1 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.font="Google Sans Flex 18pt:Semibold:16.0" \
-             label.color=0xfff7fbff \
-             label.padding_left=0 \
-             label.padding_right=12 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/clock_time.sh"
-
-sketchybar --add bracket clock_pill clock_date clock_separator clock_time \
-           --set clock_pill \
-             background.drawing=on \
-             background.color=0xff2d6cdf \
-             background.corner_radius=16 \
-             background.height=34
-
-# Spaziatura uniforme tra la pillola data/ora e il widget meteo
-sketchybar --add item left_gap_weather left \
-           --set left_gap_weather \
-             width=8 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.drawing=off \
-             background.drawing=off
-
-# Meteo — subito dopo la data
-sketchybar --add item weather left \
-           --set weather \
-             update_freq=900 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             icon.padding_left=0 \
-             icon.padding_right=0 \
-             label.font="Google Sans Flex 18pt:Semibold:16.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=12 \
-             label.padding_right=12 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/weather.sh" \
-             click_script="$PLUGIN_DIR/weather_popup_toggle.sh" \
-             --subscribe weather mouse.entered mouse.exited
-
-sketchybar --add bracket weather_pill weather \
-           --set weather_pill \
-             background.drawing=on \
-             background.color=0xff49454f \
-             background.corner_radius=16 \
-             background.height=34
-
-##### CENTER #####
-
-# Sui Mac con notch fisico il widget calendario vive già nel notch stesso
-# (overlay disegnato da calendar_notch); qui aggiungiamo un item nativo solo
-# dove non c'è un notch, così eredita la fissità della barra vera invece di
-# scorrere durante lo swipe tra scrivanie.
-HAS_NOTCH=$("$PLUGIN_DIR/has_notch" 2>/dev/null)
-if [ "$HAS_NOTCH" != "1" ]; then
-  sketchybar --add item calendar_center center \
-             --set calendar_center \
-               update_freq=20 \
-               padding_left=0 \
-               padding_right=0 \
-               icon="⬢" \
-               icon.font="Apple Symbols:Regular:16.0" \
-               icon.color=0x44cdd6f4 \
-               icon.padding_left=12 \
-               icon.padding_right=6 \
-               label.font="Google Sans Flex 18pt:Semibold:16.0" \
-               label.color=0xffe6e1e5 \
-               label.padding_left=0 \
-               label.padding_right=12 \
-               background.drawing=off \
-               script="$PLUGIN_DIR/calendar.sh" \
-               click_script="$PLUGIN_DIR/calendar_toggle.sh"
-
-  # Bottone "Partecipa" — compare solo quando calendar.sh rileva un evento con
-  # link alla videochiamata nella finestra -5min/+15min intorno all'inizio.
-  sketchybar --add item calendar_join center \
-             --set calendar_join \
-               drawing=off \
-               padding_left=0 \
-               padding_right=8 \
-               icon.drawing=off \
-               label="Partecipa" \
-               label.font="Google Sans Flex 18pt:Bold:12.0" \
-               label.padding_left=10 \
-               label.padding_right=10 \
-               background.drawing=on \
-               background.corner_radius=10 \
-               background.height=22 \
-               click_script="$PLUGIN_DIR/calendar_join.sh"
-
-  sketchybar --add bracket calendar_pill calendar_center calendar_join \
-             --set calendar_pill \
-               background.drawing=on \
-               background.color=0xff49454f \
-               background.corner_radius=16 \
-               background.height=34
+# Popup rete persistente.
+if [ -f /tmp/network_popup.pid ]; then
+  kill "$(cat /tmp/network_popup.pid)" 2>/dev/null || true
+fi
+if [ -x "$PLUGIN_DIR/network_popup" ]; then
+  "$PLUGIN_DIR/network_popup" >>/tmp/network_popup.log 2>&1 &
+  echo $! >/tmp/network_popup.pid
 fi
 
-##### RIGHT #####
-# (aggiunto in ordine inverso: il primo sarà più a destra)
-
-# Corporate logo (shown when on corporate WiFi or AWS VPN)
-sketchybar --add item vpn_logo right \
-           --set vpn_logo \
-             background.image.string="$CONFIG_DIR/images/corp_logo.png" \
-             background.image.scale=0.018 \
-             background.image.drawing=on \
-             background.drawing=on \
-             label.drawing=off \
-             drawing=off
-
-# VPN/WiFi — MD3 surface-variant pill, on-surface icon+label
-sketchybar --add item vpn right \
-           --set vpn \
-             update_freq=1 \
-             padding_left=0 \
-             padding_right=4 \
-             icon=wifi \
-             icon.font="Material Symbols Rounded:Regular:16.0" \
-             icon.color=0xffe6e1e5 \
-             icon.padding_left=12 \
-             icon.padding_right=4 \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=0 \
-             label.padding_right=12 \
-             background.drawing=on \
-             background.color=0xff49454f \
-             background.corner_radius=16 \
-             background.height=34 \
-             script="$PLUGIN_DIR/vpn.sh" \
-             click_script="echo 'toggle \$POPUP_CLICK_X \$POPUP_CLICK_Y' | nc -U /tmp/network_popup.sock 2>/dev/null || true"
-
-# Spaziatura uniforme tra i widget di destra
-sketchybar --add item right_gap_network right \
-           --set right_gap_network \
-             width=8 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.drawing=off \
-             background.drawing=off
-
-# Prestazioni — GPU, CPU e memoria in un unico widget
-# Gli elementi a destra vengono aggiunti in ordine inverso.
-sketchybar --add item mem right \
-           --set mem \
-             padding_left=0 \
-             padding_right=4 \
-             icon="memory" \
-             icon.font="Material Symbols Rounded:Regular:16.0" \
-             icon.color=0xffcac4d0 \
-             icon.padding_left=2 \
-             icon.padding_right=3 \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=0 \
-             label.padding_right=12 \
-             background.drawing=off
-
-sketchybar --add item cpu right \
-           --set cpu \
-             padding_left=0 \
-             padding_right=0 \
-             icon="developer_board" \
-             icon.font="Material Symbols Rounded:Regular:16.0" \
-             icon.color=0xffcac4d0 \
-             icon.padding_left=2 \
-             icon.padding_right=3 \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=0 \
-             label.padding_right=4 \
-             background.drawing=off
-
-sketchybar --add item gpu right \
-           --set gpu \
-             update_freq=2 \
-             padding_left=4 \
-             padding_right=0 \
-             icon="deployed_code" \
-             icon.font="Material Symbols Rounded:Regular:16.0" \
-             icon.color=0xffcac4d0 \
-             icon.padding_left=12 \
-             icon.padding_right=3 \
-             label.font="Google Sans Flex 18pt:Medium:16.0" \
-             label.color=0xffe6e1e5 \
-             label.padding_left=0 \
-             label.padding_right=4 \
-             background.drawing=off \
-             script="$PLUGIN_DIR/system_stats.sh"
-
-sketchybar --add bracket system_stats_pill gpu cpu mem \
-           --set system_stats_pill \
-             background.drawing=on \
-             background.color=0xff49454f \
-             background.corner_radius=16 \
-             background.height=34
-
-sketchybar --add item right_gap_stats right \
-           --set right_gap_stats \
-             width=8 \
-             padding_left=0 \
-             padding_right=0 \
-             icon.drawing=off \
-             label.drawing=off \
-             background.drawing=off
-
-# Batteria — pillola unica, sfondo pieno con la tinta già miscelata sul
-# grigio scuro degli altri widget (stesso risultato visivo del tint
-# traslucido dell'AQI, ma senza un secondo strato/bordo). Colore e icona
-# impostati da battery.sh in base al livello di carica.
-sketchybar --add item battery right \
-           --set battery \
-             update_freq=60 \
-             padding_left=0 \
-             padding_right=4 \
-             icon.font="Material Symbols Rounded:Regular:20.0" \
-             icon.color=0xff79d491 \
-             icon.padding_left=12 \
-             icon.padding_right=4 \
-             label.font="Google Sans Flex 18pt:Semibold:16.0" \
-             label.color=0xff79d491 \
-             label.padding_left=0 \
-             label.padding_right=12 \
-             background.drawing=on \
-             background.color=0xff515c5a \
-             background.corner_radius=16 \
-             background.height=34 \
-             script="$PLUGIN_DIR/battery.sh" \
-           --subscribe battery system_woke power_source_change
+# Agenda/calendario persistente. Avviarlo come figlio del servizio SketchyBar
+# preserva l'identità responsabile usata dai permessi Calendar e Contacts.
+if [ -f /tmp/calendar_notch.pid ]; then
+  kill "$(cat /tmp/calendar_notch.pid)" 2>/dev/null || true
+fi
+if [ -x "$PLUGIN_DIR/calendar_notch" ]; then
+  "$PLUGIN_DIR/calendar_notch" >>/tmp/calendar_notch.log 2>&1 &
+  echo $! >/tmp/calendar_notch.pid
+fi
 
 sketchybar --update
-
-# Avvia/riavvia network popup
-if [ -f /tmp/network_popup.pid ]; then
-  kill "$(cat /tmp/network_popup.pid)" 2>/dev/null
-fi
-"$PLUGIN_DIR/network_popup" &
-echo $! > /tmp/network_popup.pid
-
-# Avvia il widget calendario: usa il notch fisico se presente, altrimenti
-# disegna un pill centrato alla stessa altezza della bar (gestito internamente
-# dal binario in base alla geometria dello schermo).
-CALENDAR_NOTCH_PID=/tmp/calendar_notch.pid
-if [ -f "$CALENDAR_NOTCH_PID" ]; then
-  kill "$(cat "$CALENDAR_NOTCH_PID")" 2>/dev/null
-  rm -f "$CALENDAR_NOTCH_PID"
-fi
-
-if [ -x "$PLUGIN_DIR/calendar_notch" ]; then
-  "$PLUGIN_DIR/calendar_notch" &
-  echo $! > "$CALENDAR_NOTCH_PID"
-fi

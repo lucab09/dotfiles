@@ -4,7 +4,7 @@ Reproducible macOS configuration managed with symlinks.
 
 ## Included
 
-- SketchyBar, including Calendar Notch, network popup, weather, and system stats
+- Full-width Swift/AppKit status bar with glass background, calendar agenda, network and weather popups, compute stats, battery, and date/time
 - Yabai
 - Neovim / LazyVim
 - WezTerm
@@ -29,8 +29,8 @@ cd ~/dotfiles
 3. installs the applications, tools, and fonts from `Brewfile`;
 4. backs up existing config directories and creates symlinks into this repository, including the global pi status-bar extension;
 5. configures the Calendar Notch OAuth client;
-6. compiles and signs all Swift plugins for the current Mac;
-7. starts or restarts Yabai and SketchyBar.
+6. compiles and signs all Swift plugins and the main Swift status bar for the current Mac;
+7. starts or restarts Yabai and the hidden SketchyBar supervisor that launches the Swift UI.
 
 If Command Line Tools need to be installed, finish Apple's installer and run `./setup.sh` again.
 `./install.sh` is retained as an alias for `./setup.sh`.
@@ -59,7 +59,7 @@ On every new Mac:
 - open Calendar Notch and grant Calendar and Contacts access when requested;
 - authorize the required Google accounts from the gear button in Calendar Notch.
 
-Calendar Notch starts only on a display with a physical notch. The rest of SketchyBar still works on other Macs/displays.
+The calendar agenda supports the physical notch when present; the main Swift status bar remains the only visible bar across the full display width.
 
 ## Local-only credentials
 
