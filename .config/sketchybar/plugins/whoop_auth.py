@@ -35,7 +35,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "whoop.json")
 
 AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
-SCOPES = "read:sleep read:recovery read:cycles read:profile offline"
+SCOPES = "read:sleep read:recovery read:cycles read:workout read:profile offline"
 
 # Cloudflare davanti a api.prod.whoop.com blocca (403 "error code: 1010") lo
 # User-Agent di default di urllib: serve un UA da browser.

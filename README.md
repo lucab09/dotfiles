@@ -54,7 +54,9 @@ The Google Cloud project must have Google Calendar API and Google People API ena
 
 ## WHOOP health widget
 
-The `Health` item on the right side of the bar shows WHOOP sleep performance. It talks to the official WHOOP v2 developer API over OAuth; no credentials are committed.
+The `Health` cluster on the left of the bar shows WHOOP sleep performance, recovery and day strain, plus a dumbbell icon with the number of workouts this week (clicking it opens a scrollable card with each workout's detail). It talks to the official WHOOP v2 developer API over OAuth; no credentials are committed.
+
+OAuth scopes requested: `read:sleep read:recovery read:cycles read:workout read:profile offline`. After adding `read:workout` an existing install must re-run `whoop_auth.py` once to re-consent (make sure the scope is enabled on the app at developer.whoop.com).
 
 One-time setup on a new Mac:
 

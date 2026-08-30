@@ -111,10 +111,11 @@ record = {
     "sleep": state.get("sleep"),
     "recovery": state.get("recovery"),
     "strain": state.get("strain"),
+    "workouts": state.get("workouts"),
 }
 
 def core(payload):
-    return {key: payload.get(key) for key in ("sleep", "recovery", "strain")}
+    return {key: payload.get(key) for key in ("sleep", "recovery", "strain", "workouts")}
 
 last = None
 try:

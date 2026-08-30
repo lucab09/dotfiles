@@ -14,6 +14,7 @@ private enum Metrics {
     static let healthWidth: CGFloat = 146
     static let iconWidth: CGFloat = 24
     static let calendarHealthSpacing: CGFloat = 18
+    static let healthWorkoutsSpacing: CGFloat = 12
     static let computeWiFiSpacing: CGFloat = 12
     static let wifiBatterySpacing: CGFloat = 6
     static let batteryWeatherSpacing: CGFloat = 6
@@ -494,13 +495,62 @@ private struct HealthPayload: Decodable {
         let score: Double?
     }
 
+    struct Workout: Decodable, Identifiable {
+        let sport: String
+        let start: String?
+        let end: String?
+        let minutes: Int?
+        let strain: Double?
+        let avgHr: Int?
+        let maxHr: Int?
+        let kcal: Int?
+        let distanceKm: Double?
+
+        var id: String { (start ?? "") + "|" + sport }
+
+        enum CodingKeys: String, CodingKey {
+            case sport, start, end, minutes, strain, kcal
+            case avgHr = "avg_hr"
+            case maxHr = "max_hr"
+            case distanceKm = "distance_km"
+        }
+
+        var startDate: Date? {
+            guard let start else { return nil }
+            let withFraction = ISO8601DateFormatter()
+            withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = withFraction.date(from: start) { return date }
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            return plain.date(from: start)
+        }
+    }
+
+    struct Workouts: Decodable {
+        let weekStart: String?
+        let count: Int?
+        let totalStrain: Double?
+        let totalKcal: Int?
+        let totalMinutes: Int?
+        let items: [Workout]?
+
+        enum CodingKeys: String, CodingKey {
+            case count, items
+            case weekStart = "week_start"
+            case totalStrain = "total_strain"
+            case totalKcal = "total_kcal"
+            case totalMinutes = "total_minutes"
+        }
+    }
+
     let sleep: Sleep?
     let recovery: Recovery?
     let strain: Strain?
+    let workouts: Workouts?
     let updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case sleep, recovery, strain
+        case sleep, recovery, strain, workouts
         case updatedAt = "updated_at"
     }
 }
@@ -510,6 +560,10 @@ private final class HealthStatusModel: ObservableObject {
     @Published private(set) var recoveryScore: Int?
     @Published private(set) var dayStrain: Double?
     @Published private(set) var asleepHours: Double?
+    @Published private(set) var weeklyWorkoutCount: Int?
+    @Published private(set) var weeklyWorkoutMinutes: Int?
+    @Published private(set) var weeklyWorkoutStrain: Double?
+    @Published private(set) var workouts: [HealthPayload.Workout] = []
     private let stateURL = URL(fileURLWithPath: "/tmp/sketchybar_health_state.json")
     private var refreshTimer: Timer?
 
@@ -536,6 +590,10 @@ private final class HealthStatusModel: ObservableObject {
         recoveryScore = payload.recovery?.score
         dayStrain = payload.strain?.score
         asleepHours = payload.sleep?.asleepHours
+        weeklyWorkoutCount = payload.workouts?.count
+        weeklyWorkoutMinutes = payload.workouts?.totalMinutes
+        weeklyWorkoutStrain = payload.workouts?.totalStrain
+        workouts = payload.workouts?.items ?? []
     }
 }
 
@@ -613,6 +671,33 @@ private struct HealthStatusWidget: View {
         if let recovery = model.recoveryScore { parts.append("recupero \(recovery) percento") }
         if let strain = model.dayStrain { parts.append(String(format: "sforzo %.1f", strain)) }
         return parts.isEmpty ? "Dati salute non disponibili" : parts.joined(separator: ", ")
+    }
+}
+
+private struct WeeklyWorkoutsIcon: View {
+    let count: Int?
+
+    private static let neutral = Color(red: 0.79, green: 0.77, blue: 0.81)
+    private static let accent = Color(red: 0.60, green: 0.80, blue: 1.00)
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "dumbbell.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(count == nil ? Self.neutral.opacity(0.5) : Self.accent)
+
+            Text(count.map { "\($0)" } ?? "--")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .foregroundStyle(count == nil ? Self.neutral : Self.accent)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            count.map { "\($0) allenamenti questa settimana" } ?? "Allenamenti non disponibili"
+        )
     }
 }
 
@@ -956,6 +1041,98 @@ private struct ComputePopupView: View {
     }
 }
 
+// MARK: - Workouts popup
+
+private struct WorkoutsPopupView: View {
+    @ObservedObject var model: HealthStatusModel
+
+    private static let accent = Color(red: 0.39, green: 0.52, blue: 0.96)
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "it_IT")
+        formatter.dateFormat = "EEE d MMM · HH:mm"
+        return formatter
+    }()
+
+    var body: some View {
+        DesignSystemCard(title: "Allenamenti", subtitle: subtitle) {
+            if model.workouts.isEmpty {
+                DesignSystemCardRow(
+                    icon: "zzz",
+                    iconTint: Color(red: 0.60, green: 0.66, blue: 0.80),
+                    title: "Nessun allenamento",
+                    value: "Questa settimana"
+                )
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 6) {
+                        ForEach(model.workouts) { workout in
+                            DesignSystemCardRow(
+                                icon: Self.sportIcon(workout.sport),
+                                iconTint: Self.accent,
+                                title: workout.sport,
+                                value: detail(workout)
+                            )
+                        }
+                    }
+                }
+                .frame(maxHeight: 280)
+            }
+        }
+        .frame(width: 360, height: 380)
+    }
+
+    private var subtitle: String {
+        let count = model.weeklyWorkoutCount ?? 0
+        guard count > 0 else { return "Settimana corrente" }
+        let minutes = model.weeklyWorkoutMinutes ?? 0
+        let duration = minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+        let strain = model.weeklyWorkoutStrain ?? 0
+        return "\(count) · \(duration) · strain \(String(format: "%.1f", strain))"
+    }
+
+    private func detail(_ workout: HealthPayload.Workout) -> String {
+        var parts: [String] = []
+        if let date = workout.startDate {
+            parts.append(Self.dayFormatter.string(from: date))
+        }
+        if let minutes = workout.minutes { parts.append("\(minutes)m") }
+        if let strain = workout.strain { parts.append("strain \(String(format: "%.1f", strain))") }
+        if let avgHr = workout.avgHr { parts.append("\(avgHr) bpm") }
+        if let km = workout.distanceKm { parts.append(String(format: "%.1f km", km)) }
+        if let kcal = workout.kcal { parts.append("\(kcal) kcal") }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    private static func sportIcon(_ sport: String) -> String {
+        let name = sport.lowercased()
+        switch true {
+        case name.contains("run"): return "figure.run"
+        case name.contains("walk"): return "figure.walk"
+        case name.contains("hik"): return "figure.hiking"
+        case name.contains("cycl"), name.contains("bike"), name.contains("ride"):
+            return "figure.outdoor.cycle"
+        case name.contains("swim"): return "figure.pool.swim"
+        case name.contains("weight"), name.contains("lift"), name.contains("strength"):
+            return "dumbbell.fill"
+        case name.contains("yoga"): return "figure.yoga"
+        case name.contains("pilates"): return "figure.pilates"
+        case name.contains("box"), name.contains("mma"), name.contains("martial"):
+            return "figure.boxing"
+        case name.contains("row"): return "figure.rower"
+        case name.contains("hiit"), name.contains("functional"), name.contains("crossfit"):
+            return "figure.highintensity.intervaltraining"
+        case name.contains("elliptical"): return "figure.elliptical"
+        case name.contains("ski"): return "figure.skiing.downhill"
+        case name.contains("soccer"), name.contains("football"): return "figure.soccer"
+        case name.contains("basket"): return "figure.basketball"
+        case name.contains("tennis"), name.contains("padel"): return "figure.tennis"
+        default: return "figure.mixed.cardio"
+        }
+    }
+}
+
 private struct GlassBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -983,6 +1160,7 @@ private struct BatteryBarView: View {
     let onWiFiClick: () -> Void
     let onCalendarClick: () -> Void
     let onWeatherClick: () -> Void
+    let onWorkoutsClick: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -999,6 +1177,13 @@ private struct BatteryBarView: View {
 
                 HealthStatusWidget(model: healthModel)
                     .frame(width: Metrics.healthWidth)
+
+                Spacer().frame(width: Metrics.healthWorkoutsSpacing)
+
+                Button(action: onWorkoutsClick) {
+                    WeeklyWorkoutsIcon(count: healthModel.weeklyWorkoutCount)
+                }
+                .buttonStyle(.plain)
             }
             .fixedSize(horizontal: true, vertical: false)
 
@@ -1063,6 +1248,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     private let healthModel = HealthStatusModel()
     private var panel: NSPanel?
     private var computePanel: NSPanel?
+    private var workoutsPanel: NSPanel?
     private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1099,7 +1285,8 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
                 onComputeClick: { [weak self] in self?.toggleComputePopup() },
                 onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
                 onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
-                onWeatherClick: { [weak self] in self?.toggleWeatherPopup() }
+                onWeatherClick: { [weak self] in self?.toggleWeatherPopup() },
+                onWorkoutsClick: { [weak self] in self?.toggleWorkoutsPopup() }
             )
         )
         self.panel = panel
@@ -1159,19 +1346,24 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            DispatchQueue.main.async { self?.closeComputePopupIfPointerIsOutside() }
+            DispatchQueue.main.async {
+                self?.closeComputePopupIfPointerIsOutside()
+                self?.closeWorkoutsPopupIfPointerIsOutside()
+            }
         }
     }
 
     @objc private func screenConfigurationChanged() {
         positionPanel()
         positionComputePopup()
+        positionWorkoutsPopup()
     }
 
     private func toggleComputePopup() {
         sendNetworkPopupCommand("hide")
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
+        workoutsPanel?.orderOut(nil)
         if computePanel?.isVisible == true {
             computePanel?.orderOut(nil)
             return
@@ -1213,8 +1405,57 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         computePanel.setFrame(frame, display: true)
     }
 
+    private func toggleWorkoutsPopup() {
+        sendNetworkPopupCommand("hide")
+        sendCalendarPopupCommand("hide")
+        hideWeatherPopup()
+        computePanel?.orderOut(nil)
+        if workoutsPanel?.isVisible == true {
+            workoutsPanel?.orderOut(nil)
+            return
+        }
+
+        if workoutsPanel == nil {
+            let size = NSSize(width: 360, height: 380)
+            let popup = NSPanel(
+                contentRect: NSRect(origin: .zero, size: size),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            popup.isOpaque = false
+            popup.backgroundColor = .clear
+            popup.hasShadow = false
+            popup.level = .statusBar
+            popup.hidesOnDeactivate = false
+            popup.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            popup.contentView = NSHostingView(rootView: WorkoutsPopupView(model: healthModel))
+            workoutsPanel = popup
+        }
+
+        healthModel.refresh()
+        positionWorkoutsPopup()
+        workoutsPanel?.orderFrontRegardless()
+    }
+
+    private func positionWorkoutsPopup() {
+        guard let panel, let workoutsPanel else { return }
+        let gap: CGFloat = 6
+        // La card degli allenamenti è nel cluster di sinistra: la ancoriamo al
+        // bordo sinistro della barra, così non deve inseguire la larghezza
+        // variabile del calendario.
+        let frame = NSRect(
+            x: panel.frame.minX + 8,
+            y: panel.frame.minY - workoutsPanel.frame.height - gap,
+            width: workoutsPanel.frame.width,
+            height: workoutsPanel.frame.height
+        )
+        workoutsPanel.setFrame(frame, display: true)
+    }
+
     private func toggleWiFiPopup() {
         computePanel?.orderOut(nil)
+        workoutsPanel?.orderOut(nil)
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
         guard let panel else { return }
@@ -1224,6 +1465,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
 
     private func toggleCalendarPopup() {
         computePanel?.orderOut(nil)
+        workoutsPanel?.orderOut(nil)
         sendNetworkPopupCommand("hide")
         hideWeatherPopup()
         sendCalendarPopupCommand("toggle")
@@ -1231,6 +1473,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
 
     private func toggleWeatherPopup() {
         computePanel?.orderOut(nil)
+        workoutsPanel?.orderOut(nil)
         sendNetworkPopupCommand("hide")
         sendCalendarPopupCommand("hide")
 
@@ -1290,6 +1533,14 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         let pointer = NSEvent.mouseLocation
         if !panel.frame.contains(pointer) && !computePanel.frame.contains(pointer) {
             computePanel.orderOut(nil)
+        }
+    }
+
+    private func closeWorkoutsPopupIfPointerIsOutside() {
+        guard let panel, let workoutsPanel, workoutsPanel.isVisible else { return }
+        let pointer = NSEvent.mouseLocation
+        if !panel.frame.contains(pointer) && !workoutsPanel.frame.contains(pointer) {
+            workoutsPanel.orderOut(nil)
         }
     }
 

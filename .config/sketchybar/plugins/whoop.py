@@ -21,7 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 CONFIG_DIR = os.path.expanduser("~/Library/Application Support/Sketchybar Health")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "whoop.json")
@@ -225,6 +225,81 @@ def _strain_summary(token: str) -> dict:
     }
 
 
+def _week_start_iso() -> str:
+    """Lunedì 00:00 (ora locale) della settimana corrente, in UTC ISO-8601."""
+    local_now = datetime.now().astimezone()
+    monday_local = (local_now - timedelta(days=local_now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return monday_local.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _duration_seconds(start, end) -> float:
+    if not start or not end:
+        return 0.0
+    try:
+        began = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        ended = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        return max((ended - began).total_seconds(), 0.0)
+    except ValueError:
+        return 0.0
+
+
+def _workouts_summary(token: str) -> dict:
+    week_start = _week_start_iso()
+    data = _get_json(
+        token=token,
+        path="/activity/workout",
+        params={"limit": 25, "start": week_start},
+    )
+
+    items = []
+    total_strain = 0.0
+    total_kilojoule = 0.0
+    total_seconds = 0.0
+
+    for record in data.get("records", []):
+        if record.get("score_state") != "SCORED":
+            continue
+        score = record.get("score") or {}
+        start = record.get("start")
+        end = record.get("end")
+        seconds = _duration_seconds(start, end)
+        strain = score.get("strain")
+        kilojoule = score.get("kilojoule")
+        distance = score.get("distance_meter")
+
+        items.append(
+            {
+                "sport": record.get("sport_name") or "Allenamento",
+                "start": start,
+                "end": end,
+                "minutes": _round(seconds / 60) if seconds else None,
+                "strain": _round(strain, 1),
+                "avg_hr": _round(score.get("average_heart_rate")),
+                "max_hr": _round(score.get("max_heart_rate")),
+                "kcal": _round(kilojoule / 4.184) if kilojoule else None,
+                "distance_km": _round(distance / 1000, 2) if distance else None,
+            }
+        )
+        if strain:
+            total_strain += float(strain)
+        if kilojoule:
+            total_kilojoule += float(kilojoule)
+        total_seconds += seconds
+
+    items.sort(key=lambda item: item.get("start") or "", reverse=True)
+
+    return {
+        "week_start": week_start[:10],
+        "count": len(items),
+        "total_strain": _round(total_strain, 1),
+        "total_kcal": _round(total_kilojoule / 4.184) if total_kilojoule else 0,
+        "total_minutes": _round(total_seconds / 60) if total_seconds else 0,
+        "items": items,
+    }
+
+
 def _write_state(state: dict) -> None:
     fd, tmp = tempfile.mkstemp(prefix="sketchybar_health_state_", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -280,11 +355,21 @@ def main() -> None:
     except urllib.error.URLError as error:
         _fail(f"Rete non raggiungibile: {error.reason}")
 
+    # I workout richiedono lo scope read:workout: se manca (token generato prima
+    # di aggiungerlo) o la chiamata fallisce, il resto dello stato si salva
+    # comunque.
+    try:
+        workouts = _workouts_summary(token)
+    except (urllib.error.HTTPError, urllib.error.URLError, ValueError, KeyError) as error:
+        print(f"whoop.py: workout non disponibili: {error}", file=sys.stderr)
+        workouts = {}
+
     state = {
         "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "sleep": sleep,
         "recovery": recovery,
         "strain": strain,
+        "workouts": workouts,
         "error": None,
     }
     _write_state(state)
