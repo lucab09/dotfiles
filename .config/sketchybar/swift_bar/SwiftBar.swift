@@ -126,8 +126,10 @@ private struct ComputeSnapshot {
     let cpu: Int
     let gpu: Int
     let ram: Int
+    let diskFreeBytes: Int64
 
     static func read() -> ComputeSnapshot {
+        let diskFreeBytes = availableDiskBytes()
         let command = #"""
         GPU=$(ioreg -r -d 1 -w 0 -c IOAccelerator 2>/dev/null | sed -n 's/.*"Device Utilization %"=\([0-9][0-9]*\).*/\1/p' | head -1)
         CPU=$(top -l 1 -n 0 2>/dev/null | awk '/CPU usage/ {gsub(/%/, "", $3); gsub(/%/, "", $5); printf "%.0f", $3 + $5; exit}')
@@ -149,15 +151,26 @@ private struct ComputeSnapshot {
             let values = (String(data: data, encoding: .utf8) ?? "")
                 .split(whereSeparator: { $0.isWhitespace })
                 .compactMap { Int($0) }
-            guard values.count == 3 else { return ComputeSnapshot(cpu: 0, gpu: 0, ram: 0) }
+            guard values.count == 3 else {
+                return ComputeSnapshot(cpu: 0, gpu: 0, ram: 0, diskFreeBytes: diskFreeBytes)
+            }
             return ComputeSnapshot(
                 cpu: min(max(values[0], 0), 100),
                 gpu: min(max(values[1], 0), 100),
-                ram: min(max(values[2], 0), 100)
+                ram: min(max(values[2], 0), 100),
+                diskFreeBytes: diskFreeBytes
             )
         } catch {
-            return ComputeSnapshot(cpu: 0, gpu: 0, ram: 0)
+            return ComputeSnapshot(cpu: 0, gpu: 0, ram: 0, diskFreeBytes: diskFreeBytes)
         }
+    }
+
+    private static func availableDiskBytes() -> Int64 {
+        guard
+            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: "/"),
+            let freeBytes = attributes[.systemFreeSize] as? NSNumber
+        else { return 0 }
+        return max(freeBytes.int64Value, 0)
     }
 }
 
@@ -165,6 +178,7 @@ private final class ComputeModel: ObservableObject {
     @Published private(set) var cpu = 0
     @Published private(set) var gpu = 0
     @Published private(set) var ram = 0
+    @Published private(set) var diskFreeBytes: Int64 = 0
     private var timer: Timer?
     private var refreshInFlight = false
 
@@ -188,6 +202,7 @@ private final class ComputeModel: ObservableObject {
                 self?.cpu = snapshot.cpu
                 self?.gpu = snapshot.gpu
                 self?.ram = snapshot.ram
+                self?.diskFreeBytes = snapshot.diskFreeBytes
                 self?.refreshInFlight = false
             }
         }
@@ -754,8 +769,40 @@ private struct ComputePopupView: View {
                 title: "Memoria",
                 value: "\(model.ram)% utilizzata"
             )
+            DesignSystemCardRow(
+                icon: "internaldrive.fill",
+                iconTint: Color(red: 0.73, green: 0.62, blue: 0.95),
+                title: "SSD",
+                value: "\(diskFreeLabel) disponibili",
+                actionTitle: "Pulisci",
+                action: openMoleInTerminal
+            )
         }
-        .frame(width: 320, height: 290)
+        .frame(width: 320, height: 352)
+    }
+
+    private var diskFreeLabel: String {
+        ByteCountFormatter.string(
+            fromByteCount: model.diskFreeBytes,
+            countStyle: .file
+        )
+    }
+
+    private func openMoleInTerminal() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e",
+            """
+            tell application "Terminal"
+                activate
+                do script "/opt/homebrew/bin/mole"
+            end tell
+            """
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
     }
 }
 
@@ -961,7 +1008,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         }
 
         if computePanel == nil {
-            let size = NSSize(width: 320, height: 290)
+            let size = NSSize(width: 320, height: 352)
             let popup = NSPanel(
                 contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel],
