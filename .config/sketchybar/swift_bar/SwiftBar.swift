@@ -586,7 +586,7 @@ private struct BatteryWidget: View {
             )
                 .frame(width: 24, height: 24)
 
-            Text("\(model.percentage)%")
+            Text("\(model.percentage)")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(statusColor)
