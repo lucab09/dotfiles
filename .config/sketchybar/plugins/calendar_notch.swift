@@ -3846,7 +3846,6 @@ final class NotchPanelController: NSObject {
     private var hostingView: PointingHandHostingView<CalendarNotchView>?
     private var notchScreen: NSScreen?
     private var notchRect: NSRect = .zero
-    private var hasPhysicalNotch = true
     private var closeWorkItem: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
     private var dayTimer: Timer?
@@ -3900,19 +3899,11 @@ final class NotchPanelController: NSObject {
             return
         }
         buildPanelIfNeeded()
-        if hasPhysicalNotch {
-            // Sul notch fisico la finestra resta sempre visibile (trasparente a
-            // riposo): il nero del notch stesso funge da sfondo.
-            movePanel(animated: false)
-            panel?.orderFrontRegardless()
-        } else {
-            // Sui Mac senza notch il pill "in quiete" è un item sketchybar nativo
-            // (calendar_center): questa finestra resta nascosta finché l'item non
-            // segnala un hover via socket, così non partecipa mai allo swipe tra
-            // scrivanie. Il calendario va comunque autorizzato/caricato subito per
-            // popolare lo stato che l'item legge da disco.
-            model.prepareForExpansion()
-        }
+        // Il widget collassato nel notch non viene più mostrato: il punto di
+        // ingresso unico è il calendario a sinistra nella barra Swift. Il model
+        // resta comunque attivo per aggiornare lo stato condiviso su disco.
+        panel?.orderOut(nil)
+        model.prepareForExpansion()
     }
 
     private func buildPanelIfNeeded() {
@@ -3972,17 +3963,14 @@ final class NotchPanelController: NSObject {
         withAnimation(.easeInOut(duration: animationDuration)) {
             presentation.isExpanded = true
         }
-        if !hasPhysicalNotch {
-            // La finestra è nascosta a riposo su Mac senza notch: va rimostrata
-            // solo ora che l'item sketchybar segnala l'hover.
-            panel?.orderFrontRegardless()
-        }
-        movePanel(animated: true)
+        // Il pannello è sempre nascosto a riposo; compare direttamente nella
+        // posizione espansa a sinistra solo su richiesta del widget Swift.
+        panel?.setFrame(expandedFrame, display: true)
+        panel?.orderFrontRegardless()
     }
 
-    /// Click sul widget collassato (Mac senza notch fisico): apre o chiude
-    /// il popup immediatamente, senza il ritardo di `scheduleCollapse`
-    /// pensato per l'hover.
+    /// Click sul widget calendario della barra Swift: apre o chiude il popup
+    /// immediatamente, senza il ritardo usato per l'uscita del puntatore.
     private func toggle() {
         closeWorkItem?.cancel()
         closeWorkItem = nil
@@ -4005,14 +3993,11 @@ final class NotchPanelController: NSObject {
         withAnimation(.easeInOut(duration: animationDuration * 0.8)) {
             presentation.isExpanded = false
         }
-        if hasPhysicalNotch {
-            movePanel(animated: true)
-        } else {
-            // Torna a nascondersi del tutto: il pill "in quiete" è l'item
-            // sketchybar, non questa finestra.
-            movePanel(animated: true) { [weak self] in
-                self?.panel?.orderOut(nil)
-            }
+        // Non tornare verso il notch centrale: dopo la breve animazione interna
+        // il pannello sparisce completamente.
+        DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration * 0.8) { [weak self] in
+            guard self?.presentation.isExpanded == false else { return }
+            self?.panel?.orderOut(nil)
         }
     }
 
@@ -4040,16 +4025,17 @@ final class NotchPanelController: NSObject {
             NSApp.terminate(nil)
             return
         }
-        if hasPhysicalNotch || presentation.isExpanded {
+        if presentation.isExpanded {
+            movePanel(animated: false)
             panel?.orderFrontRegardless()
+        } else {
+            panel?.orderOut(nil)
         }
-        movePanel(animated: false)
     }
 
     @discardableResult
     private func updateNotchGeometry() -> Bool {
         if let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
-            hasPhysicalNotch = true
             notchScreen = screen
 
             let topInset = screen.safeAreaInsets.top
@@ -4081,7 +4067,6 @@ final class NotchPanelController: NSObject {
         // alla stessa altezza della sketchybar (margin=8, height=36) invece di
         // rinunciare al widget.
         guard let screen = NSScreen.main else { return false }
-        hasPhysicalNotch = false
         notchScreen = screen
 
         let width: CGFloat = 200
