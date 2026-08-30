@@ -190,6 +190,12 @@ compile_swift_plugins() {
     echo "  ok: swift_bar"
 }
 
+install_whoop_archive_agent() {
+    local script="$DOTFILES/.config/sketchybar/plugins/whoop_archive.sh"
+    [ -x "$script" ] || chmod +x "$script" 2>/dev/null || true
+    sh "$script" install
+}
+
 restart_brew_service() {
     local service="$1"
     if brew services list | awk -v name="$service" '$1 == name && $2 == "started" { found=1 } END { exit !found }'; then
@@ -231,6 +237,9 @@ install_oauth_config
 
 echo "==> Compiling Swift plugins..."
 compile_swift_plugins
+
+echo "==> Installing WHOOP history LaunchAgent..."
+install_whoop_archive_agent
 
 echo "==> Starting services..."
 restart_yabai_service

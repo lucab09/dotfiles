@@ -11,7 +11,9 @@ private enum Metrics {
     static let batteryWidth: CGFloat = 68
     static let weatherWidth: CGFloat = 112
     static let dateTimeWidth: CGFloat = 116
+    static let healthWidth: CGFloat = 146
     static let iconWidth: CGFloat = 24
+    static let calendarHealthSpacing: CGFloat = 18
     static let computeWiFiSpacing: CGFloat = 12
     static let wifiBatterySpacing: CGFloat = 6
     static let batteryWeatherSpacing: CGFloat = 6
@@ -315,10 +317,15 @@ private struct CalendarStatusWidget: View {
         let duration = model.remainingMinutes < 60
             ? "\(model.remainingMinutes)m"
             : "\(model.remainingMinutes / 60)h \(model.remainingMinutes % 60)m"
+        let text: String
         if model.inProgress {
-            return model.hasMeetingLink ? model.title : "\(model.title) · \(duration)"
+            text = model.hasMeetingLink ? model.title : "\(model.title) · \(duration)"
+        } else {
+            text = "\(model.title) · tra \(duration)"
         }
-        return "\(model.title) · tra \(duration)"
+        // Il gruppo di sinistra adotta la larghezza del contenuto: senza un
+        // limite un titolo lunghissimo spingerebbe il resto della barra.
+        return text.count > 52 ? text.prefix(51).trimmingCharacters(in: .whitespaces) + "…" : text
     }
 
     private var eventColor: Color {
@@ -463,6 +470,149 @@ private struct WeatherStatusWidget: View {
         case "thunderstorm": return Color(red: 0.75, green: 0.57, blue: 1.00)
         default: return textColor
         }
+    }
+}
+
+private struct HealthPayload: Decodable {
+    struct Sleep: Decodable {
+        let performance: Int?
+        let efficiency: Int?
+        let consistency: Int?
+        let asleepHours: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case performance, efficiency, consistency
+            case asleepHours = "asleep_hours"
+        }
+    }
+
+    struct Recovery: Decodable {
+        let score: Int?
+    }
+
+    struct Strain: Decodable {
+        let score: Double?
+    }
+
+    let sleep: Sleep?
+    let recovery: Recovery?
+    let strain: Strain?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sleep, recovery, strain
+        case updatedAt = "updated_at"
+    }
+}
+
+private final class HealthStatusModel: ObservableObject {
+    @Published private(set) var sleepPerformance: Int?
+    @Published private(set) var recoveryScore: Int?
+    @Published private(set) var dayStrain: Double?
+    @Published private(set) var asleepHours: Double?
+    private let stateURL = URL(fileURLWithPath: "/tmp/sketchybar_health_state.json")
+    private var refreshTimer: Timer?
+
+    func start() {
+        refresh()
+        // Sola lettura del file di stato: a scaricarlo da WHOOP e a scriverlo
+        // ci pensa il LaunchAgent whoop_archive.sh (ogni 30 minuti), che è anche
+        // l'unico a rinnovare i token.
+        refreshTimer = Timer.scheduledTimer(
+            timeInterval: 60,
+            target: self,
+            selector: #selector(refresh),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    @objc func refresh() {
+        guard
+            let data = try? Data(contentsOf: stateURL),
+            let payload = try? JSONDecoder().decode(HealthPayload.self, from: data)
+        else { return }
+        sleepPerformance = payload.sleep?.performance
+        recoveryScore = payload.recovery?.score
+        dayStrain = payload.strain?.score
+        asleepHours = payload.sleep?.asleepHours
+    }
+}
+
+private struct HealthStatusWidget: View {
+    @ObservedObject var model: HealthStatusModel
+
+    private static let neutral = Color(red: 0.79, green: 0.77, blue: 0.81)
+    private static let green = Color(red: 0.65, green: 0.89, blue: 0.63)
+    private static let yellow = Color(red: 0.98, green: 0.89, blue: 0.69)
+    private static let red = Color(red: 0.95, green: 0.55, blue: 0.66)
+    private static let strainBlue = Color(red: 0.50, green: 0.87, blue: 1.00)
+
+    var body: some View {
+        HStack(spacing: 10) {
+            metric(
+                icon: "bed.double.fill",
+                value: model.sleepPerformance.map { "\($0)" },
+                color: sleepColor
+            )
+            metric(
+                icon: "heart.fill",
+                value: model.recoveryScore.map { "\($0)" },
+                color: recoveryColor
+            )
+            metric(
+                icon: "bolt.fill",
+                value: model.dayStrain.map { strain in
+                    String(format: strain < 10 ? "%.1f" : "%.0f", strain)
+                },
+                color: model.dayStrain == nil ? Self.neutral : Self.strainBlue
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func metric(icon: String, value: String?, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(value == nil ? Self.neutral.opacity(0.5) : color)
+
+            Text(value ?? "--")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .foregroundStyle(value == nil ? Self.neutral : color)
+        }
+    }
+
+    private var sleepColor: Color {
+        guard let value = model.sleepPerformance else { return Self.neutral }
+        switch value {
+        case ..<60: return Self.red
+        case ..<85: return Self.yellow
+        default: return Self.green
+        }
+    }
+
+    private var recoveryColor: Color {
+        guard let value = model.recoveryScore else { return Self.neutral }
+        switch value {
+        case ..<34: return Self.red
+        case ..<67: return Self.yellow
+        default: return Self.green
+        }
+    }
+
+    private var accessibilityLabel: String {
+        var parts: [String] = []
+        if let sleep = model.sleepPerformance { parts.append("sonno \(sleep) percento") }
+        if let recovery = model.recoveryScore { parts.append("recupero \(recovery) percento") }
+        if let strain = model.dayStrain { parts.append(String(format: "sforzo %.1f", strain)) }
+        return parts.isEmpty ? "Dati salute non disponibili" : parts.joined(separator: ", ")
     }
 }
 
@@ -828,6 +978,7 @@ private struct BatteryBarView: View {
     @ObservedObject var dateTimeModel: DateTimeModel
     @ObservedObject var calendarModel: CalendarStatusModel
     @ObservedObject var weatherModel: WeatherStatusModel
+    @ObservedObject var healthModel: HealthStatusModel
     let onComputeClick: () -> Void
     let onWiFiClick: () -> Void
     let onCalendarClick: () -> Void
@@ -835,11 +986,21 @@ private struct BatteryBarView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: onCalendarClick) {
-                CalendarStatusWidget(model: calendarModel)
-                    .frame(maxWidth: 420, alignment: .leading)
+            // Gruppo di sinistra: calendario e salute aderiscono al contenuto,
+            // così le metriche restano a fianco del testo dell'evento invece di
+            // essere spinte al centro da un frame elastico.
+            HStack(spacing: 0) {
+                Button(action: onCalendarClick) {
+                    CalendarStatusWidget(model: calendarModel)
+                }
+                .buttonStyle(.plain)
+
+                Spacer().frame(width: Metrics.calendarHealthSpacing)
+
+                HealthStatusWidget(model: healthModel)
+                    .frame(width: Metrics.healthWidth)
             }
-            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
 
             Spacer(minLength: 24)
 
@@ -899,6 +1060,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     private let dateTimeModel = DateTimeModel()
     private let calendarModel = CalendarStatusModel()
     private let weatherModel = WeatherStatusModel()
+    private let healthModel = HealthStatusModel()
     private var panel: NSPanel?
     private var computePanel: NSPanel?
     private var outsideClickMonitor: Any?
@@ -911,6 +1073,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         dateTimeModel.start()
         calendarModel.start()
         weatherModel.start()
+        healthModel.start()
 
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Metrics.panelSize),
@@ -932,6 +1095,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
                 dateTimeModel: dateTimeModel,
                 calendarModel: calendarModel,
                 weatherModel: weatherModel,
+                healthModel: healthModel,
                 onComputeClick: { [weak self] in self?.toggleComputePopup() },
                 onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
                 onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
@@ -982,6 +1146,12 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(
             weatherModel,
             selector: #selector(WeatherStatusModel.refresh),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            healthModel,
+            selector: #selector(HealthStatusModel.refresh),
             name: NSWorkspace.didWakeNotification,
             object: nil
         )
