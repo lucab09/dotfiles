@@ -674,26 +674,93 @@ private struct HealthStatusWidget: View {
     }
 }
 
+/// Icona "workout" WHOOP: due tracciati stroke su viewBox 24×24, ridisegnati
+/// come Path per restare nitidi a qualunque scala (come BatteryLevelIcon).
+private struct WorkoutMarkIcon: View {
+    var color: Color = .white
+    var lineWidth: CGFloat = 1.7
+
+    var body: some View {
+        Canvas { context, size in
+            let sx = size.width / 24
+            let sy = size.height / 24
+            let stroke = StrokeStyle(
+                lineWidth: lineWidth * sx,
+                lineCap: .round,
+                lineJoin: .round
+            )
+
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: x * sx, y: y * sy)
+            }
+
+            var path = Path()
+            path.move(to: p(2.01792, 20.3051))
+            path.addCurve(to: p(10.3797, 20.1645),
+                          control1: p(3.14656, 21.9196), control2: p(8.05942, 23.1871))
+            path.addCurve(to: p(20.3991, 19.1134),
+                          control1: p(12.8894, 21.3649), control2: p(17.0289, 20.9928))
+            path.addCurve(to: p(21.5827, 18.0593),
+                          control1: p(20.8678, 18.8521), control2: p(21.3112, 18.5222))
+            path.addCurve(to: p(21.0919, 13.4251),
+                          control1: p(22.1957, 17.0143), control2: p(22.2102, 15.5644))
+            path.addCurve(to: p(14.5201, 3.04212),
+                          control1: p(19.2274, 8.77072), control2: p(15.874, 4.68513))
+            path.addCurve(to: p(11.3872, 2.08279),
+                          control1: p(14.2421, 2.78865), control2: p(12.4687, 2.42868))
+            path.addCurve(to: p(8.95612, 3.23862),
+                          control1: p(10.9095, 1.93477), control2: p(10.02, 1.83664))
+            path.addCurve(to: p(9.06767, 6.63346),
+                          control1: p(8.45176, 3.90329), control2: p(6.16059, 5.5357))
+            path.addCurve(to: p(11.9038, 6.58404),
+                          control1: p(9.51805, 6.74806), control2: p(9.84912, 6.95939))
+            path.addCurve(to: p(13.3103, 7.41041),
+                          control1: p(12.1714, 6.53761), control2: p(12.8395, 6.58404))
+            path.addLine(to: p(14.2936, 8.81662))
+            path.addCurve(to: p(14.4627, 9.25682),
+                          control1: p(14.3851, 8.94752), control2: p(14.4445, 9.09813))
+            path.addCurve(to: p(15.4651, 13.5826),
+                          control1: p(14.635, 10.7557), control2: p(14.6294, 12.6323))
+            path.addCurve(to: p(8.2595, 14.6951),
+                          control1: p(14.1743, 12.6492), control2: p(10.8011, 11.5406))
+
+            path.move(to: p(2.00189, 12.94))
+            path.addCurve(to: p(10.4179, 12.5216),
+                          control1: p(3.21009, 11.791), control2: p(6.71197, 9.97592))
+
+            context.stroke(path, with: .color(color), style: stroke)
+        }
+    }
+}
+
 private struct WeeklyWorkoutsIcon: View {
     let count: Int?
 
-    private static let neutral = Color(red: 0.79, green: 0.77, blue: 0.81)
-    private static let accent = Color(red: 0.60, green: 0.80, blue: 1.00)
+    // Palette del badge: pill sabbia (#F0E7DA), icona e numero viola scuro (#2D1C42).
+    private static let pill = Color(red: 0.941, green: 0.906, blue: 0.855)
+    private static let accent = Color(red: 0.176, green: 0.110, blue: 0.259)
+    private static let accentMuted = Color(red: 0.176, green: 0.110, blue: 0.259)
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "dumbbell.fill")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(count == nil ? Self.neutral.opacity(0.5) : Self.accent)
+        let available = count != nil
+        let tint = available ? Self.accent : Self.accentMuted
+
+        HStack(spacing: 7) {
+            WorkoutMarkIcon(color: tint)
+                .frame(width: 16, height: 16)
 
             Text(count.map { "\($0)" } ?? "--")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(count == nil ? Self.neutral : Self.accent)
+                .foregroundStyle(tint)
         }
-        .contentShape(Rectangle())
+        .padding(.leading, 4)
+        .padding(.trailing, 11)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(Self.pill))
+        .contentShape(Capsule(style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             count.map { "\($0) allenamenti questa settimana" } ?? "Allenamenti non disponibili"
