@@ -123,7 +123,7 @@ install_oauth_config() {
 
 compile_swift_plugins() {
     local plugins="$DOTFILES/.config/sketchybar/plugins"
-    local swift_file binary info_plist bundle_id signing_identity name app_bundle
+    local swift_file binary info_plist bundle_id signing_identity name app_bundle source_to_compile combined_source
     local -a compile_args
 
     signing_identity="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development:/{print $2; exit}')"
@@ -134,7 +134,9 @@ compile_swift_plugins() {
         name="$(basename "${swift_file%.swift}")"
         binary="${swift_file%.swift}"
         info_plist="${swift_file%.swift}-Info.plist"
-        compile_args=(-O "$swift_file" -o "$binary" -framework Cocoa -framework SwiftUI)
+        source_to_compile="$swift_file"
+        combined_source=""
+        compile_args=(-O "$source_to_compile" -o "$binary" -framework Cocoa -framework SwiftUI)
 
         if [ "$name" = "calendar_notch" ]; then
             compile_args+=(-framework EventKit -framework Contacts -framework CryptoKit -framework Network -framework Security)
@@ -144,12 +146,21 @@ compile_swift_plugins() {
             compile_args+=(-framework CoreLocation)
         fi
 
+        if [ "$name" = "network_popup" ]; then
+            combined_source="$(mktemp "${TMPDIR:-/tmp}/sketchybar_network_popup.XXXXXX.swift")"
+            cat "$DOTFILES/.config/sketchybar/components/Card.swift" "$swift_file" >"$combined_source"
+            compile_args[1]="$combined_source"
+        fi
+
         if [ -f "$info_plist" ]; then
             compile_args+=(-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$info_plist")
         fi
 
         echo "  compiling: $name"
         swiftc "${compile_args[@]}"
+        if [ -n "$combined_source" ]; then
+            rm -f "$combined_source"
+        fi
 
         if [ -f "$info_plist" ]; then
             bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")"

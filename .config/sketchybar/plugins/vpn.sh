@@ -68,24 +68,14 @@ elif [ -f "$UPLOG" ] && [ ! -f "$DOWNLOG" ]; then
   AWS_ACTIVE=1
 fi
 
-# --- Corporate WiFi ---
-CORP_ACTIVE=0
-[ "$SSID" = "qbc-ent" ] && CORP_ACTIVE=1
-
-if [ "$CORP_ACTIVE" = "1" ]; then
-  sketchybar --set vpn_logo drawing=on
-else
-  sketchybar --set vpn_logo drawing=off
-fi
-
 # Push state to network popup
 WIFI_ENABLED=1
 networksetup -getairportpower en0 2>/dev/null | grep -q "Off" && WIFI_ENABLED=0
 SSID_ENCODED=$(echo "$SSID" | sed 's/ /%20/g')
-echo "state ssid=$SSID_ENCODED wifi=$WIFI_ENABLED tailscale=$TAILSCALE_ACTIVE nord=$NORD_ACTIVE aws=$AWS_ACTIVE corp=$CORP_ACTIVE" \
+echo "state ssid=$SSID_ENCODED wifi=$WIFI_ENABLED tailscale=$TAILSCALE_ACTIVE nord=$NORD_ACTIVE aws=$AWS_ACTIVE" \
   | nc -U /tmp/network_popup.sock 2>/dev/null || true
 
-ANY_VPN=$(( TAILSCALE_ACTIVE + NORD_ACTIVE + AWS_ACTIVE + CORP_ACTIVE ))
+ANY_VPN=$(( TAILSCALE_ACTIVE + NORD_ACTIVE + AWS_ACTIVE ))
 
 # --- Icon: LAN > WiFi ---
 if [ "$LAN_ACTIVE" = "1" ]; then

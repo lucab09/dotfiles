@@ -2,14 +2,9 @@ import AppKit
 import SwiftUI
 import Foundation
 
-// MARK: - Catppuccin Mocha
+// MARK: - Network colors
 
-private let cBase    = Color(red: 30/255,  green: 32/255,  blue: 48/255)
-private let cSurf    = Color(red: 49/255,  green: 50/255,  blue: 68/255)
-private let cText    = Color(red: 205/255, green: 214/255, blue: 244/255)
-private let cSub     = Color(red: 166/255, green: 173/255, blue: 200/255)
-private let cGreen   = Color(red: 166/255, green: 227/255, blue: 161/255)
-private let cOverlay = Color(red: 108/255, green: 112/255, blue: 134/255)
+private let cGreen = Color(red: 166/255, green: 227/255, blue: 161/255)
 
 // MARK: - State
 
@@ -19,7 +14,6 @@ final class NetworkState: ObservableObject {
     @Published var tailscaleActive: Bool = false
     @Published var nordActive: Bool = false
     @Published var awsActive: Bool = false
-    @Published var corpActive: Bool = false
 }
 
 // MARK: - Shell
@@ -38,7 +32,7 @@ func sh(_ cmd: String) -> String {
 
 struct DetectedState {
     var ssid = "WiFi"; var wifi = true
-    var tailscale = false; var nord = false; var aws = false; var corp = false
+    var tailscale = false; var nord = false; var aws = false
 }
 
 func detectNetwork() -> DetectedState {
@@ -59,7 +53,6 @@ func detectNetwork() -> DetectedState {
     } else {
         d.aws = fm.fileExists(atPath: upLog) && !fm.fileExists(atPath: downLog)
     }
-    d.corp = d.ssid == "qbc-ent"
     return d
 }
 
@@ -68,7 +61,7 @@ func detectNetwork() -> DetectedState {
 final class IPCServer {
     var onToggle: ((CGFloat) -> Void)?
     var onHide: (() -> Void)?
-    var onState:  ((String, Bool, Bool, Bool, Bool, Bool) -> Void)?
+    var onState:  ((String, Bool, Bool, Bool, Bool) -> Void)?
 
     func start() {
         let path = "/tmp/network_popup.sock"
@@ -121,201 +114,115 @@ final class IPCServer {
                 d["wifi"]      != "0",
                 d["tailscale"] == "1",
                 d["nord"]      == "1",
-                d["aws"]       == "1",
-                d["corp"]      == "1"
+                d["aws"]       == "1"
             )}
-        }
-    }
-}
-
-// MARK: - Cursor helper
-
-extension View {
-    func handCursor() -> some View {
-        onHover { inside in
-            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
     }
 }
 
 // MARK: - SwiftUI Views
 
-private let popupWidth: CGFloat = 280
-
-struct SectionHeader: View {
-    let title: String
-    var body: some View {
-        HStack {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(cSub)
-                .tracking(1.2)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 2)
-    }
-}
-
-struct WiFiRow: View {
-    @ObservedObject var state: NetworkState
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: state.wifiEnabled ? "wifi" : "wifi.slash")
-                .frame(width: 20)
-                .foregroundColor(cText)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Wi-Fi")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(cText)
-                if state.wifiEnabled {
-                    Text(state.ssid)
-                        .font(.system(size: 12))
-                        .foregroundColor(cSub)
-                }
-            }
-            Spacer()
-            Toggle("", isOn: Binding(
-                get: { state.wifiEnabled },
-                set: { v in
-                    state.wifiEnabled = v
-                    DispatchQueue.global().async { sh("networksetup -setairportpower en0 \(v ? "on" : "off") 2>/dev/null") }
-                }
-            ))
-            .toggleStyle(.switch)
-            .tint(cGreen)
-            .controlSize(.small)
-            .labelsHidden()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-}
-
-struct SettingsLinkRow: View {
-    @State private var hovered = false
-    var body: some View {
-        Button {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.wifi-settings-extension")!)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "gearshape").frame(width: 20).foregroundColor(cSub)
-                Text("Network Settings").font(.system(size: 13)).foregroundColor(cSub)
-                Spacer()
-                Image(systemName: "arrow.up.right").font(.system(size: 10)).foregroundColor(cOverlay)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 9)
-            .background(hovered ? cSurf : Color.clear)
-            .cornerRadius(8)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 4)
-        .onHover { hovered = $0 }
-        .handCursor()
-    }
-}
-
-struct VPNRow: View {
-    let icon: String?           // SF Symbol name, nil se si usa appIconPath
-    let appIconPath: String?    // percorso app per icona nativa
-    let activeIconColor: Color  // colore icona quando attiva
-    let label: String
-    let active: Bool
-    let action: (() -> Void)?
-    @State private var hovered = false
-
-    init(icon: String? = nil, appIconPath: String? = nil,
-         activeIconColor: Color = cGreen,
-         label: String, active: Bool, action: (() -> Void)?) {
-        self.icon = icon; self.appIconPath = appIconPath
-        self.activeIconColor = activeIconColor
-        self.label = label; self.active = active; self.action = action
-    }
-
-    @ViewBuilder private var iconView: some View {
-        if let path = appIconPath {
-            let nsImg = NSWorkspace.shared.icon(forFile: path)
-            Image(nsImage: nsImg)
-                .resizable().scaledToFit()
-                .frame(width: 20, height: 20)
-                .opacity(active ? 1.0 : 0.4)
-        } else if let name = icon {
-            Image(systemName: name)
-                .frame(width: 20)
-                .foregroundColor(active ? activeIconColor : cText.opacity(0.6))
-        }
-    }
-
-    var body: some View {
-        let hasAction = action != nil
-        Button { action?() } label: {
-            HStack(spacing: 10) {
-                iconView
-                Text(label)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(cText)
-                Spacer()
-                Circle()
-                    .fill(active ? cGreen : cOverlay.opacity(0.5))
-                    .frame(width: 7, height: 7)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(hovered && hasAction ? cSurf : Color.clear)
-            .cornerRadius(8)
-        }
-        .buttonStyle(.plain)
-        .disabled(!hasAction)
-        .padding(.horizontal, 4)
-        .onHover { v in
-            if hasAction { withAnimation(.easeInOut(duration: 0.1)) { hovered = v } }
-        }
-        .handCursor()
-    }
-}
-
-struct PopupDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(cOverlay.opacity(0.25))
-            .frame(height: 1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-    }
-}
+private let popupWidth: CGFloat = 320
 
 struct NetworkPopupView: View {
     @ObservedObject var state: NetworkState
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SectionHeader(title: "Settings")
-            WiFiRow(state: state)
-            SettingsLinkRow()
-
-            PopupDivider()
-
-            SectionHeader(title: "Configurations")
-            VPNRow(appIconPath: "/Applications/AWS VPN Client/AWS VPN Client.app",
-                   label: "AWS VPN", active: state.awsActive)
-                  { sh("open -a 'AWS VPN Client' 2>/dev/null") }
-            VPNRow(appIconPath: "/Applications/Tailscale.app",
-                   label: "Tailscale", active: state.tailscaleActive)
-                  { sh("open -a 'Tailscale' 2>/dev/null") }
-            VPNRow(appIconPath: "/Applications/NordVPN.app",
-                   label: "NordVPN", active: state.nordActive)
-                  { sh("open -a 'NordVPN' 2>/dev/null") }
-            VPNRow(icon: "building.2.fill",  label: "Corporate WiFi", active: state.corpActive,
-                   action: nil)
-
-            Spacer(minLength: 12)
+        DesignSystemCard(
+            title: state.wifiEnabled ? state.ssid : "Wi-Fi",
+            subtitle: "Impostazioni di Rete",
+            subtitleAction: openNetworkSettings,
+            headerAccessory: {
+                Toggle("Wi-Fi", isOn: Binding(
+                    get: { state.wifiEnabled },
+                    set: setWiFiEnabled
+                ))
+                .toggleStyle(CardToggleStyle())
+                .labelsHidden()
+                .accessibilityLabel("Attiva o disattiva Wi-Fi")
+            }
+        ) {
+            connectionRow(
+                icon: "shield.lefthalf.filled",
+                appIconPath: "/Applications/AWS VPN Client/AWS VPN Client.app/Contents/Resources/AppIcon.icns",
+                title: "AWS VPN",
+                active: state.awsActive,
+                toggleState: Binding(
+                    get: { state.awsActive },
+                    set: { enabled in
+                        state.awsActive = enabled
+                        setApplicationRunning(enabled, named: "AWS VPN Client")
+                    }
+                )
+            )
+            connectionRow(
+                icon: "point.3.connected.trianglepath.dotted",
+                appIconPath: "/Applications/Tailscale.app/Contents/Resources/AppIcon.icns",
+                title: "Tailscale",
+                active: state.tailscaleActive,
+                toggleState: Binding(
+                    get: { state.tailscaleActive },
+                    set: { enabled in
+                        state.tailscaleActive = enabled
+                        setApplicationRunning(enabled, named: "Tailscale")
+                    }
+                )
+            )
+            connectionRow(
+                icon: "lock.shield.fill",
+                appIconPath: "/Applications/NordVPN.app/Contents/Resources/AppIconSideload.icns",
+                title: "NordVPN",
+                active: state.nordActive,
+                toggleState: Binding(
+                    get: { state.nordActive },
+                    set: { enabled in
+                        state.nordActive = enabled
+                        setApplicationRunning(enabled, named: "NordVPN")
+                    }
+                )
+            )
         }
         .frame(width: popupWidth)
-        .background(cBase)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(cOverlay.opacity(0.2), lineWidth: 1)
+    }
+
+    private func connectionRow(
+        icon: String,
+        appIconPath: String,
+        title: String,
+        active: Bool,
+        toggleState: Binding<Bool>? = nil
+    ) -> some View {
+        DesignSystemCardRow(
+            icon: icon,
+            appIconPath: appIconPath,
+            iconTint: active ? cGreen : CardTheme.secondaryText,
+            title: title,
+            toggleState: toggleState,
+            toggleAccessibilityLabel: "Attiva o chiudi \(title)"
         )
+    }
+
+    private func setApplicationRunning(_ shouldRun: Bool, named applicationName: String) {
+        DispatchQueue.global().async {
+            if shouldRun {
+                sh("open -a '\(applicationName)' 2>/dev/null")
+            } else {
+                // Equivalente al comando Cmd+Q sull'app che gestisce il servizio.
+                sh("osascript -e 'tell application \"\(applicationName)\" to quit' 2>/dev/null")
+            }
+        }
+    }
+
+    private func setWiFiEnabled(_ enabled: Bool) {
+        state.wifiEnabled = enabled
+        DispatchQueue.global().async {
+            sh("networksetup -setairportpower en0 \(enabled ? "on" : "off") 2>/dev/null")
+        }
+    }
+
+    private func openNetworkSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.wifi-settings-extension") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
@@ -325,16 +232,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: NSPanel?
     var hosting: NSHostingView<NetworkPopupView>?
     var clickMonitor: Any?
+    var anchorX: CGFloat?
     let state = NetworkState()
     let ipc = IPCServer()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         ipc.onToggle = { [weak self] x in self?.toggle(anchorX: x) }
         ipc.onHide = { [weak self] in self?.hide() }
-        ipc.onState  = { [weak self] ssid, wifi, ts, nord, aws, corp in
+        ipc.onState  = { [weak self] ssid, wifi, ts, nord, aws in
             guard let s = self?.state else { return }
             s.ssid = ssid; s.wifiEnabled = wifi
-            s.tailscaleActive = ts; s.nordActive = nord; s.awsActive = aws; s.corpActive = corp
+            s.tailscaleActive = ts; s.nordActive = nord; s.awsActive = aws
         }
         ipc.start()
         refresh()
@@ -345,12 +253,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let d = detectNetwork()
         state.ssid = d.ssid; state.wifiEnabled = d.wifi
         state.tailscaleActive = d.tailscale; state.nordActive = d.nord
-        state.awsActive = d.aws; state.corpActive = d.corp
+        state.awsActive = d.aws
     }
 
     func buildPanel() {
         let h = NSHostingView(rootView: NetworkPopupView(state: state))
-        h.frame = NSRect(x: 0, y: 0, width: popupWidth, height: 99999)
+        h.frame = NSRect(x: 0, y: 0, width: popupWidth, height: 0)
         h.layoutSubtreeIfNeeded()
         let height = max(h.fittingSize.height, 200)
         h.frame.size.height = height
@@ -361,6 +269,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         p.level = .popUpMenu
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         p.isOpaque = false; p.hasShadow = true; p.backgroundColor = .clear
+        // SwiftUI emette `onHover` soltanto se il pannello riceve mouseMoved.
+        p.acceptsMouseMovedEvents = true
         p.isReleasedWhenClosed = false; p.contentView = h
         hosting = h; panel = p
     }
@@ -373,6 +283,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func show(anchorX: CGFloat) {
         guard let p = panel, let h = hosting else { return }
+        self.anchorX = anchorX
         let H = max(h.fittingSize.height, 200)
         let screen = NSScreen.screens.first(where: {
             anchorX >= $0.frame.minX && anchorX <= $0.frame.maxX
@@ -387,13 +298,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         p.makeKeyAndOrderFront(nil)
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self = self, let p = self.panel else { return }
-            if !p.frame.contains(NSEvent.mouseLocation) { self.hide() }
+            let clickPoint = NSEvent.mouseLocation
+            // Il click sull'icona Wi-Fi della barra deve arrivare al comando
+            // `toggle`: non chiudiamo qui il popup per poi riaprirlo subito.
+            if self.isAnchorClick(clickPoint) { return }
+            if !p.frame.contains(clickPoint) { self.hide() }
         }
     }
 
     func hide() {
         panel?.orderOut(nil)
         if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
+    }
+
+    private func isAnchorClick(_ point: NSPoint) -> Bool {
+        guard let anchorX,
+              let screen = NSScreen.screens.first(where: {
+                  anchorX >= $0.frame.minX && anchorX <= $0.frame.maxX
+              }) else { return false }
+        let barBottom = screen.frame.maxY - 50
+        return point.x >= anchorX - 32 && point.x <= anchorX + 8
+            && point.y >= barBottom && point.y <= screen.frame.maxY
     }
 }
 

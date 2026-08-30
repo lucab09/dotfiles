@@ -729,42 +729,33 @@ private struct ComputeIcon: View {
     }
 }
 
+// MARK: - Compute popup
+
 private struct ComputePopupView: View {
     @ObservedObject var model: ComputeModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            statusRow("CPU", value: model.cpu)
-            Divider().overlay(Color.white.opacity(0.07))
-            statusRow("GPU", value: model.gpu)
-            Divider().overlay(Color.white.opacity(0.07))
-            statusRow("RAM", value: model.ram)
+        DesignSystemCard(title: "Compute", subtitle: "Utilizzo in tempo reale") {
+            DesignSystemCardRow(
+                icon: "cpu",
+                iconTint: Color(red: 0.94, green: 0.37, blue: 0.22),
+                title: "CPU",
+                value: "\(model.cpu)% utilizzata"
+            )
+            DesignSystemCardRow(
+                icon: "square.stack.3d.up.fill",
+                iconTint: Color(red: 0.39, green: 0.52, blue: 0.96),
+                title: "GPU",
+                value: "\(model.gpu)% utilizzata"
+            )
+            DesignSystemCardRow(
+                icon: "memorychip.fill",
+                iconTint: Color(red: 0.40, green: 0.69, blue: 0.44),
+                title: "Memoria",
+                value: "\(model.ram)% utilizzata"
+            )
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(red: 0.135, green: 0.135, blue: 0.145))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                }
-        }
-        .padding(1)
-    }
-
-    private func statusRow(_ name: String, value: Int) -> some View {
-        HStack {
-            Text(name)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(Color(red: 0.79, green: 0.77, blue: 0.81))
-            Spacer()
-            Text("\(value)%")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Color(red: 1.00, green: 0.61, blue: 0.39))
-        }
-        .frame(height: 30)
+        .frame(width: 320, height: 290)
     }
 }
 
@@ -970,7 +961,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         }
 
         if computePanel == nil {
-            let size = NSSize(width: 178, height: 111)
+            let size = NSSize(width: 320, height: 290)
             let popup = NSPanel(
                 contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel],
