@@ -13,6 +13,7 @@ private enum Metrics {
     static let dateTimeWidth: CGFloat = 116
     static let healthWidth: CGFloat = 146
     static let iconWidth: CGFloat = 24
+    static let calendarJoinSpacing: CGFloat = 8
     static let calendarHealthSpacing: CGFloat = 18
     static let healthWorkoutsSpacing: CGFloat = 12
     static let computeWiFiSpacing: CGFloat = 12
@@ -246,6 +247,8 @@ private struct CalendarPayload: Decodable {
     let remainingMinutes: Int?
     let inProgress: Bool?
     let meetingURL: String?
+    let meetingColor: String?
+    let endsInMinutes: Int?
 
     enum CodingKeys: String, CodingKey {
         case title, color
@@ -253,6 +256,8 @@ private struct CalendarPayload: Decodable {
         case remainingMinutes = "remaining_minutes"
         case inProgress = "in_progress"
         case meetingURL = "meeting_url"
+        case meetingColor = "meeting_color"
+        case endsInMinutes = "ends_in_minutes"
     }
 }
 
@@ -263,6 +268,9 @@ private final class CalendarStatusModel: ObservableObject {
     @Published private(set) var remainingMinutes = 0
     @Published private(set) var inProgress = false
     @Published private(set) var hasMeetingLink = false
+    @Published private(set) var meetingURL: URL?
+    @Published private(set) var meetingColorHex = ""
+    @Published private(set) var endsInMinutes: Int?
     private let stateURL = URL(fileURLWithPath: "/tmp/sketchybar_calendar_state.json")
     private var timer: Timer?
 
@@ -288,7 +296,10 @@ private final class CalendarStatusModel: ObservableObject {
         colorHex = payload.color ?? "0xffcac4d0"
         remainingMinutes = payload.remainingMinutes ?? 0
         inProgress = payload.inProgress ?? false
-        hasMeetingLink = !(payload.meetingURL ?? "").isEmpty
+        meetingURL = (payload.meetingURL?.isEmpty == false) ? URL(string: payload.meetingURL!) : nil
+        hasMeetingLink = meetingURL != nil
+        meetingColorHex = payload.meetingColor ?? ""
+        endsInMinutes = payload.endsInMinutes
     }
 }
 
@@ -330,13 +341,56 @@ private struct CalendarStatusWidget: View {
     }
 
     private var eventColor: Color {
-        let raw = model.colorHex.lowercased().replacingOccurrences(of: "0x", with: "")
-        let rgbString = raw.count == 8 ? String(raw.dropFirst(2)) : raw
-        guard let value = UInt64(rgbString, radix: 16), rgbString.count == 6 else { return neutral }
-        return Color(
-            red: Double((value >> 16) & 0xff) / 255,
-            green: Double((value >> 8) & 0xff) / 255,
-            blue: Double(value & 0xff) / 255
+        calendarColor(fromHex: model.colorHex, fallback: neutral)
+    }
+}
+
+/// Converte i colori scritti da calendar_notch ("0xffrrggbb" o "rrggbb").
+private func calendarColor(fromHex hex: String, fallback: Color) -> Color {
+    let raw = hex.lowercased().replacingOccurrences(of: "0x", with: "")
+    let rgbString = raw.count == 8 ? String(raw.dropFirst(2)) : raw
+    guard let value = UInt64(rgbString, radix: 16), rgbString.count == 6 else { return fallback }
+    return Color(
+        red: Double((value >> 16) & 0xff) / 255,
+        green: Double((value >> 8) & 0xff) / 255,
+        blue: Double(value & 0xff) / 255
+    )
+}
+
+/// Pillola "Partecipa"/"Termina tra Xm" a fianco dell'evento: compare solo
+/// quando l'evento in primo piano ha un link alla videochiamata (finestra
+/// gestita da calendar_notch via `spotlightEvent`). Colore = brand del
+/// provider, stesso trattamento del bottone nell'agenda espansa.
+private struct CalendarJoinButton: View {
+    @ObservedObject var model: CalendarStatusModel
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(brandColor)
+                .padding(.horizontal, 10)
+                .frame(height: 22)
+                .background(brandColor.opacity(0.16))
+                .overlay(Capsule().strokeBorder(brandColor.opacity(0.55), lineWidth: 1))
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+    }
+
+    private var label: String {
+        guard model.inProgress, let endsIn = model.endsInMinutes else { return "Partecipa" }
+        return "Termina tra \(endsIn)m"
+    }
+
+    private var brandColor: Color {
+        calendarColor(
+            fromHex: model.meetingColorHex.isEmpty ? model.colorHex : model.meetingColorHex,
+            fallback: Color(red: 0, green: 172 / 255, blue: 71 / 255)
         )
     }
 }
@@ -1226,6 +1280,7 @@ private struct BatteryBarView: View {
     let onComputeClick: () -> Void
     let onWiFiClick: () -> Void
     let onCalendarClick: () -> Void
+    let onCalendarJoinClick: () -> Void
     let onWeatherClick: () -> Void
     let onWorkoutsClick: () -> Void
 
@@ -1239,6 +1294,11 @@ private struct BatteryBarView: View {
                     CalendarStatusWidget(model: calendarModel)
                 }
                 .buttonStyle(.plain)
+
+                if calendarModel.hasMeetingLink {
+                    Spacer().frame(width: Metrics.calendarJoinSpacing)
+                    CalendarJoinButton(model: calendarModel, action: onCalendarJoinClick)
+                }
 
                 Spacer().frame(width: Metrics.calendarHealthSpacing)
 
@@ -1352,6 +1412,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
                 onComputeClick: { [weak self] in self?.toggleComputePopup() },
                 onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
                 onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
+                onCalendarJoinClick: { [weak self] in self?.joinCurrentMeeting() },
                 onWeatherClick: { [weak self] in self?.toggleWeatherPopup() },
                 onWorkoutsClick: { [weak self] in self?.toggleWorkoutsPopup() }
             )
@@ -1528,6 +1589,14 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         guard let panel else { return }
         let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset
         sendNetworkPopupCommand("toggle \(anchorRight)")
+    }
+
+    /// Apre il link alla videochiamata dell'evento in primo piano. Chiude prima
+    /// l'agenda: restare aperta sopra la finestra della call è solo d'intralcio.
+    private func joinCurrentMeeting() {
+        guard let url = calendarModel.meetingURL else { return }
+        sendCalendarPopupCommand("hide")
+        NSWorkspace.shared.open(url)
     }
 
     private func toggleCalendarPopup() {
