@@ -9,13 +9,15 @@ private enum Metrics {
     static let outerRadius: CGFloat = 0
     static let contentRightInset: CGFloat = 8
     static let batteryWidth: CGFloat = 68
+    static let chargingBoltWidth: CGFloat = 14
+    static let batteryBoltSpacing: CGFloat = 6
     static let weatherWidth: CGFloat = 112
     static let dateTimeWidth: CGFloat = 116
     static let healthWidth: CGFloat = 146
     static let iconWidth: CGFloat = 24
     static let calendarJoinSpacing: CGFloat = 8
-    static let calendarHealthSpacing: CGFloat = 18
-    static let healthWorkoutsSpacing: CGFloat = 12
+    static let calendarHealthSpacing: CGFloat = 12
+    static let healthWorkoutsSpacing: CGFloat = 8
     static let computeWiFiSpacing: CGFloat = 12
     static let wifiBatterySpacing: CGFloat = 6
     static let batteryWeatherSpacing: CGFloat = 6
@@ -25,13 +27,20 @@ private enum Metrics {
         contentRightInset + dateTimeWidth + weatherDateSpacing
     }
 
-    static var wifiIconRightInset: CGFloat {
-        weatherRightInset + weatherWidth + batteryWeatherSpacing
-            + batteryWidth + wifiBatterySpacing
+    /// In carica il widget batteria ospita anche il fulmine: la larghezza
+    /// cresce di conseguenza, così lo spazio ai suoi lati resta identico a
+    /// quello degli altri widget invece di essere mangiato dall'icona.
+    static func batteryWidth(isCharging: Bool) -> CGFloat {
+        isCharging ? batteryWidth + batteryBoltSpacing + chargingBoltWidth : batteryWidth
     }
 
-    static var computeIconRightInset: CGFloat {
-        wifiIconRightInset + iconWidth + computeWiFiSpacing
+    static func wifiIconRightInset(isCharging: Bool) -> CGFloat {
+        weatherRightInset + weatherWidth + batteryWeatherSpacing
+            + batteryWidth(isCharging: isCharging) + wifiBatterySpacing
+    }
+
+    static func computeIconRightInset(isCharging: Bool) -> CGFloat {
+        wifiIconRightInset(isCharging: isCharging) + iconWidth + computeWiFiSpacing
     }
 }
 
@@ -247,7 +256,6 @@ private struct CalendarPayload: Decodable {
     let remainingMinutes: Int?
     let inProgress: Bool?
     let meetingURL: String?
-    let meetingColor: String?
     let endsInMinutes: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -256,7 +264,6 @@ private struct CalendarPayload: Decodable {
         case remainingMinutes = "remaining_minutes"
         case inProgress = "in_progress"
         case meetingURL = "meeting_url"
-        case meetingColor = "meeting_color"
         case endsInMinutes = "ends_in_minutes"
     }
 }
@@ -269,7 +276,6 @@ private final class CalendarStatusModel: ObservableObject {
     @Published private(set) var inProgress = false
     @Published private(set) var hasMeetingLink = false
     @Published private(set) var meetingURL: URL?
-    @Published private(set) var meetingColorHex = ""
     @Published private(set) var endsInMinutes: Int?
     private let stateURL = URL(fileURLWithPath: "/tmp/sketchybar_calendar_state.json")
     private var timer: Timer?
@@ -298,7 +304,6 @@ private final class CalendarStatusModel: ObservableObject {
         inProgress = payload.inProgress ?? false
         meetingURL = (payload.meetingURL?.isEmpty == false) ? URL(string: payload.meetingURL!) : nil
         hasMeetingLink = meetingURL != nil
-        meetingColorHex = payload.meetingColor ?? ""
         endsInMinutes = payload.endsInMinutes
     }
 }
@@ -345,6 +350,10 @@ private struct CalendarStatusWidget: View {
     }
 }
 
+/// Verde "stato ok" della barra: lo stesso di batteria carica, Wi-Fi pieno e
+/// metriche di salute in range.
+private let barGreen = Color(red: 0.65, green: 0.89, blue: 0.63)
+
 /// Converte i colori scritti da calendar_notch ("0xffrrggbb" o "rrggbb").
 private func calendarColor(fromHex hex: String, fallback: Color) -> Color {
     let raw = hex.lowercased().replacingOccurrences(of: "0x", with: "")
@@ -359,8 +368,9 @@ private func calendarColor(fromHex hex: String, fallback: Color) -> Color {
 
 /// Pillola "Partecipa"/"Termina tra Xm" a fianco dell'evento: compare solo
 /// quando l'evento in primo piano ha un link alla videochiamata (finestra
-/// gestita da calendar_notch via `spotlightEvent`). Colore = brand del
-/// provider, stesso trattamento del bottone nell'agenda espansa.
+/// gestita da calendar_notch via `spotlightEvent`). Usa il verde di stato
+/// della barra, non il brand del provider: in mezzo a batteria e Wi-Fi un
+/// verde Meet / blu Zoom / viola Teams stonava.
 private struct CalendarJoinButton: View {
     @ObservedObject var model: CalendarStatusModel
     let action: () -> Void
@@ -370,11 +380,11 @@ private struct CalendarJoinButton: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(brandColor)
+                .foregroundStyle(barGreen)
                 .padding(.horizontal, 10)
                 .frame(height: 22)
-                .background(brandColor.opacity(0.16))
-                .overlay(Capsule().strokeBorder(brandColor.opacity(0.55), lineWidth: 1))
+                .background(barGreen.opacity(0.16))
+                .overlay(Capsule().strokeBorder(barGreen.opacity(0.55), lineWidth: 1))
                 .clipShape(Capsule())
                 .contentShape(Capsule())
         }
@@ -385,13 +395,6 @@ private struct CalendarJoinButton: View {
     private var label: String {
         guard model.inProgress, let endsIn = model.endsInMinutes else { return "Partecipa" }
         return "Termina tra \(endsIn)m"
-    }
-
-    private var brandColor: Color {
-        calendarColor(
-            fromHex: model.meetingColorHex.isEmpty ? model.colorHex : model.meetingColorHex,
-            fallback: Color(red: 0, green: 172 / 255, blue: 71 / 255)
-        )
     }
 }
 
@@ -938,6 +941,53 @@ private struct BatteryLevelIcon: View, Animatable {
     }
 }
 
+/// Fulmine "in carica": stesso tracciato dell'icona SVG 24×24, ridisegnato
+/// come Path per restare nitido accanto al valore della batteria.
+private struct ChargingBoltIcon: View {
+    let accent: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let sx = size.width / 24
+            let sy = size.height / 24
+            let stroke = StrokeStyle(
+                lineWidth: 1.5 * sx,
+                lineCap: .round,
+                lineJoin: .round
+            )
+
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: x * sx, y: y * sy)
+            }
+
+            var bolt = Path()
+            bolt.move(to: p(5.22576, 11.3294))
+            bolt.addLine(to: p(12.224, 2.34651))
+            bolt.addCurve(to: p(13.7972, 3.01707),
+                          control1: p(12.7713, 1.64397), control2: p(13.7972, 2.08124))
+            bolt.addLine(to: p(13.7972, 9.96994))
+            bolt.addCurve(to: p(14.6958, 10.985),
+                          control1: p(13.7972, 10.5305), control2: p(14.1995, 10.985))
+            bolt.addLine(to: p(18.0996, 10.985))
+            bolt.addCurve(to: p(18.7742, 12.6706),
+                          control1: p(18.8729, 10.985), control2: p(19.2851, 12.0149))
+            bolt.addLine(to: p(11.776, 21.6535))
+            bolt.addCurve(to: p(10.2028, 20.9829),
+                          control1: p(11.2287, 22.356), control2: p(10.2028, 21.9188))
+            bolt.addLine(to: p(10.2028, 14.0301))
+            bolt.addCurve(to: p(9.3042, 13.015),
+                          control1: p(10.2028, 13.4695), control2: p(9.80048, 13.015))
+            bolt.addLine(to: p(5.90035, 13.015))
+            bolt.addCurve(to: p(5.22576, 11.3294),
+                          control1: p(5.12711, 13.015), control2: p(4.71494, 11.9851))
+            bolt.closeSubpath()
+
+            context.fill(bolt, with: .color(accent.opacity(0.82)))
+            context.stroke(bolt, with: .color(accent), style: stroke)
+        }
+    }
+}
+
 private struct BatteryWidget: View {
     @ObservedObject var model: BatteryModel
 
@@ -950,7 +1000,7 @@ private struct BatteryWidget: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Metrics.batteryBoltSpacing) {
             BatteryLevelIcon(
                 level: CGFloat(model.percentage) / 100,
                 accent: statusColor
@@ -961,11 +1011,20 @@ private struct BatteryWidget: View {
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(statusColor)
+
+            if model.isCharging {
+                ChargingBoltIcon(accent: statusColor)
+                    .frame(width: Metrics.chargingBoltWidth, height: Metrics.chargingBoltWidth)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .animation(.easeInOut(duration: 0.65), value: model.percentage)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Batteria \(model.percentage) percento")
+        .accessibilityLabel(
+            model.isCharging
+                ? "Batteria \(model.percentage) percento, in carica"
+                : "Batteria \(model.percentage) percento"
+        )
     }
 }
 
@@ -1335,7 +1394,7 @@ private struct BatteryBarView: View {
             Spacer().frame(width: Metrics.wifiBatterySpacing)
 
             BatteryWidget(model: batteryModel)
-                .frame(width: Metrics.batteryWidth)
+                .frame(width: Metrics.batteryWidth(isCharging: batteryModel.isCharging))
 
             Spacer().frame(width: Metrics.batteryWeatherSpacing)
 
@@ -1523,7 +1582,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     private func positionComputePopup() {
         guard let panel, let computePanel else { return }
         let gap: CGFloat = 6
-        let anchorRight = panel.frame.maxX - Metrics.computeIconRightInset
+        let anchorRight = panel.frame.maxX - Metrics.computeIconRightInset(isCharging: batteryModel.isCharging)
         let frame = NSRect(
             x: anchorRight - computePanel.frame.width,
             y: panel.frame.minY - computePanel.frame.height - gap,
@@ -1587,7 +1646,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
         guard let panel else { return }
-        let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset
+        let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset(isCharging: batteryModel.isCharging)
         sendNetworkPopupCommand("toggle \(anchorRight)")
     }
 
