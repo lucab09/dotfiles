@@ -18,6 +18,7 @@ private enum Metrics {
     static let calendarJoinSpacing: CGFloat = 8
     static let calendarHealthSpacing: CGFloat = 12
     static let healthWorkoutsSpacing: CGFloat = 8
+    static let workoutsVoiceSpacing: CGFloat = 10
     static let computeWiFiSpacing: CGFloat = 12
     static let wifiBatterySpacing: CGFloat = 6
     static let batteryWeatherSpacing: CGFloat = 6
@@ -96,28 +97,55 @@ private final class BatteryModel: ObservableObject {
 }
 
 private struct WiFiSnapshot {
-    let signalLevel: Int
+    /// RSSI in dBm, `nil` quando la scheda è spenta o non associata.
+    let rssi: Int?
 
     static func read() -> WiFiSnapshot {
         guard
             let interface = CWWiFiClient.shared().interface(),
             interface.powerOn()
         else {
-            return WiFiSnapshot(signalLevel: 0)
+            return WiFiSnapshot(rssi: nil)
         }
 
+        // `rssiValue()` vale 0 quando non c'è associazione a una rete.
         let rssi = interface.rssiValue()
-        guard rssi < 0 else { return WiFiSnapshot(signalLevel: 0) }
+        return WiFiSnapshot(rssi: rssi < 0 ? rssi : nil)
+    }
+}
 
-        if rssi >= -60 { return WiFiSnapshot(signalLevel: 3) }
-        if rssi >= -75 { return WiFiSnapshot(signalLevel: 2) }
-        return WiFiSnapshot(signalLevel: 1)
+/// Traduzione RSSI → tacche allineata all'icona Wi-Fi di sistema.
+///
+/// Le soglie precedenti (-60 / -75) erano più severe di quelle di macOS:
+/// con un segnale intorno ai -65 dBm il menu di sistema mostra la tacca piena
+/// mentre la barra ne disegnava due su tre. -67 dBm è la soglia classica
+/// "buono per voce e video", ed è il punto in cui l'icona di sistema inizia a
+/// scalare.
+private enum WiFiSignal {
+    static let fullThreshold = -67
+    static let mediumThreshold = -78
+    /// Si scende di tacca solo dopo aver superato la soglia di 3 dB: senza
+    /// questo margine l'icona sfarfalla di continuo, perché l'RSSI oscilla di
+    /// qualche dB anche stando fermi.
+    static let hysteresis = 3
+
+    static func level(rssi: Int, previous: Int) -> Int {
+        func threshold(_ base: Int, keeping level: Int) -> Int {
+            previous >= level ? base - hysteresis : base
+        }
+        if rssi >= threshold(fullThreshold, keeping: 3) { return 3 }
+        if rssi >= threshold(mediumThreshold, keeping: 2) { return 2 }
+        return 1
     }
 }
 
 private final class WiFiModel: ObservableObject {
     @Published private(set) var signalLevel = 0
     private var timer: Timer?
+    /// Ultime letture grezze: la mediana scarta il singolo campione anomalo,
+    /// che altrimenti terrebbe la tacca sbagliata per cinque secondi.
+    private var samples: [Int] = []
+    private let sampleWindow = 3
 
     func start() {
         refresh()
@@ -131,7 +159,16 @@ private final class WiFiModel: ObservableObject {
     }
 
     @objc func refresh() {
-        signalLevel = WiFiSnapshot.read().signalLevel
+        guard let rssi = WiFiSnapshot.read().rssi else {
+            samples.removeAll()
+            signalLevel = 0
+            return
+        }
+
+        samples.append(rssi)
+        if samples.count > sampleWindow { samples.removeFirst() }
+        let median = samples.sorted()[samples.count / 2]
+        signalLevel = WiFiSignal.level(rssi: median, previous: signalLevel)
     }
 }
 
@@ -654,6 +691,63 @@ private final class HealthStatusModel: ObservableObject {
     }
 }
 
+/// Stato della pipeline vocale, scritto su /tmp da handy_task.sh e da
+/// handy_capture.sh: la barra si limita a leggerlo.
+private enum VoiceCaptureState: String {
+    case idle
+    case recording
+    case processing
+    case saved
+}
+
+private final class VoiceCaptureModel: ObservableObject {
+    @Published private(set) var state: VoiceCaptureState = .idle
+    private let stateURL = URL(fileURLWithPath: "/tmp/handy_capture_state")
+    // Se il transcript è vuoto Handy non richiama l'hook esterno: senza queste
+    // soglie l'icona resterebbe accesa per sempre in attesa di un task che non
+    // arriverà mai.
+    private static let recordingTimeout: TimeInterval = 300
+    // Col modello in streaming la trascrizione avviene mentre parli: dopo lo
+    // stop resta solo il flush finale, quindi 25s bastano con abbondanza.
+    private static let processingTimeout: TimeInterval = 25
+    private var refreshTimer: Timer?
+
+    func start() {
+        refresh()
+        refreshTimer = Timer.scheduledTimer(
+            timeInterval: 0.4,
+            target: self,
+            selector: #selector(refresh),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    @objc func refresh() {
+        guard let raw = try? String(contentsOf: stateURL, encoding: .utf8) else {
+            if state != .idle { state = .idle }
+            return
+        }
+
+        var next = VoiceCaptureState(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .idle
+        let timeout: TimeInterval? = {
+            switch next {
+            case .recording: return Self.recordingTimeout
+            case .processing: return Self.processingTimeout
+            case .idle, .saved: return nil
+            }
+        }()
+
+        if let timeout,
+           let modified = try? FileManager.default.attributesOfItem(atPath: stateURL.path)[.modificationDate] as? Date,
+           Date().timeIntervalSince(modified) > timeout {
+            next = .idle
+        }
+
+        if next != state { state = next }
+    }
+}
+
 private struct HealthStatusWidget: View {
     @ObservedObject var model: HealthStatusModel
 
@@ -822,6 +916,52 @@ private struct WeeklyWorkoutsIcon: View {
         .accessibilityLabel(
             count.map { "\($0) allenamenti questa settimana" } ?? "Allenamenti non disponibili"
         )
+    }
+}
+
+private struct VoiceCaptureIcon: View {
+    let state: VoiceCaptureState
+
+    private static let neutral = Color(red: 0.79, green: 0.77, blue: 0.81)
+    private static let recording = Color(red: 0.96, green: 0.38, blue: 0.42)
+    private static let processing = Color(red: 0.98, green: 0.78, blue: 0.35)
+    private static let saved = Color(red: 0.55, green: 0.83, blue: 0.55)
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(tint)
+            .symbolEffect(.pulse, isActive: state == .recording || state == .processing)
+            .frame(width: Metrics.iconWidth, height: Metrics.iconWidth)
+            .contentShape(Rectangle())
+            .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var symbolName: String {
+        switch state {
+        case .idle: return "mic"
+        case .recording: return "mic.fill"
+        case .processing: return "waveform"
+        case .saved: return "checkmark.circle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch state {
+        case .idle: return Self.neutral
+        case .recording: return Self.recording
+        case .processing: return Self.processing
+        case .saved: return Self.saved
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch state {
+        case .idle: return "Registra un task vocale"
+        case .recording: return "Registrazione in corso, clicca per chiudere"
+        case .processing: return "Trascrizione in corso"
+        case .saved: return "Task creato"
+        }
     }
 }
 
@@ -1336,12 +1476,14 @@ private struct BatteryBarView: View {
     @ObservedObject var calendarModel: CalendarStatusModel
     @ObservedObject var weatherModel: WeatherStatusModel
     @ObservedObject var healthModel: HealthStatusModel
+    @ObservedObject var voiceCaptureModel: VoiceCaptureModel
     let onComputeClick: () -> Void
     let onWiFiClick: () -> Void
     let onCalendarClick: () -> Void
     let onCalendarJoinClick: () -> Void
     let onWeatherClick: () -> Void
     let onWorkoutsClick: () -> Void
+    let onVoiceCaptureClick: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1368,6 +1510,13 @@ private struct BatteryBarView: View {
 
                 Button(action: onWorkoutsClick) {
                     WeeklyWorkoutsIcon(count: healthModel.weeklyWorkoutCount)
+                }
+                .buttonStyle(.plain)
+
+                Spacer().frame(width: Metrics.workoutsVoiceSpacing)
+
+                Button(action: onVoiceCaptureClick) {
+                    VoiceCaptureIcon(state: voiceCaptureModel.state)
                 }
                 .buttonStyle(.plain)
             }
@@ -1432,7 +1581,13 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     private let calendarModel = CalendarStatusModel()
     private let weatherModel = WeatherStatusModel()
     private let healthModel = HealthStatusModel()
-    private var panel: NSPanel?
+    private let voiceCaptureModel = VoiceCaptureModel()
+    /// Un pannello per schermo, indicizzato sul display ID: la barra deve
+    /// comparire su tutti i monitor, non solo su quello col notch.
+    private var panels: [CGDirectDisplayID: NSPanel] = [:]
+    /// Barra su cui è avvenuto l'ultimo click: i popup si ancorano a quella,
+    /// così si aprono sullo schermo con cui l'utente sta interagendo.
+    private weak var activeBarPanel: NSPanel?
     private var computePanel: NSPanel?
     private var workoutsPanel: NSPanel?
     private var outsideClickMonitor: Any?
@@ -1446,40 +1601,9 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         calendarModel.start()
         weatherModel.start()
         healthModel.start()
+        voiceCaptureModel.start()
 
-        let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: Metrics.panelSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = .statusBar
-        panel.hidesOnDeactivate = false
-        panel.ignoresMouseEvents = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(
-            rootView: BatteryBarView(
-                batteryModel: batteryModel,
-                wifiModel: wifiModel,
-                dateTimeModel: dateTimeModel,
-                calendarModel: calendarModel,
-                weatherModel: weatherModel,
-                healthModel: healthModel,
-                onComputeClick: { [weak self] in self?.toggleComputePopup() },
-                onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
-                onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
-                onCalendarJoinClick: { [weak self] in self?.joinCurrentMeeting() },
-                onWeatherClick: { [weak self] in self?.toggleWeatherPopup() },
-                onWorkoutsClick: { [weak self] in self?.toggleWorkoutsPopup() }
-            )
-        )
-        self.panel = panel
-
-        positionPanel()
-        panel.orderFrontRegardless()
+        rebuildPanels()
 
         NotificationCenter.default.addObserver(
             self,
@@ -1541,12 +1665,13 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func screenConfigurationChanged() {
-        positionPanel()
+        rebuildPanels()
         positionComputePopup()
         positionWorkoutsPopup()
     }
 
     private func toggleComputePopup() {
+        updateActiveBarPanel()
         sendNetworkPopupCommand("hide")
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
@@ -1580,7 +1705,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func positionComputePopup() {
-        guard let panel, let computePanel else { return }
+        guard let panel = anchorPanel, let computePanel else { return }
         let gap: CGFloat = 6
         let anchorRight = panel.frame.maxX - Metrics.computeIconRightInset(isCharging: batteryModel.isCharging)
         let frame = NSRect(
@@ -1593,6 +1718,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func toggleWorkoutsPopup() {
+        updateActiveBarPanel()
         sendNetworkPopupCommand("hide")
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
@@ -1626,7 +1752,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func positionWorkoutsPopup() {
-        guard let panel, let workoutsPanel else { return }
+        guard let panel = anchorPanel, let workoutsPanel else { return }
         let gap: CGFloat = 6
         // La card degli allenamenti è nel cluster di sinistra: la ancoriamo al
         // bordo sinistro della barra, così non deve inseguire la larghezza
@@ -1641,11 +1767,12 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func toggleWiFiPopup() {
+        updateActiveBarPanel()
         computePanel?.orderOut(nil)
         workoutsPanel?.orderOut(nil)
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
-        guard let panel else { return }
+        guard let panel = anchorPanel else { return }
         let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset(isCharging: batteryModel.isCharging)
         sendNetworkPopupCommand("toggle \(anchorRight)")
     }
@@ -1667,12 +1794,13 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func toggleWeatherPopup() {
+        updateActiveBarPanel()
         computePanel?.orderOut(nil)
         workoutsPanel?.orderOut(nil)
         sendNetworkPopupCommand("hide")
         sendCalendarPopupCommand("hide")
 
-        guard let panel else { return }
+        guard let panel = anchorPanel else { return }
         let anchorRight = panel.frame.maxX - Metrics.weatherRightInset
         let scriptURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/sketchybar/plugins/weather_popup_toggle.sh")
@@ -1695,6 +1823,23 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         process.standardOutput = Pipe()
         process.standardError = Pipe()
         try? process.run()
+    }
+
+    /// Delega tutto a handy_task.sh: la barra non conosce né Handy né il DB dei
+    /// task, così la stessa logica resta riusabile da una shortcut da tastiera.
+    private func toggleVoiceCapture() {
+        let scriptURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/sketchybar/plugins/handy_task.sh")
+        let process = Process()
+        process.executableURL = scriptURL
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try? process.run()
+        // Il file di stato viene scritto dallo script: anticipiamo la lettura
+        // per non aspettare il tick del timer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.voiceCaptureModel.refresh()
+        }
     }
 
     private func sendNetworkPopupCommand(_ command: String) {
@@ -1724,7 +1869,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func closeComputePopupIfPointerIsOutside() {
-        guard let panel, let computePanel, computePanel.isVisible else { return }
+        guard let panel = anchorPanel, let computePanel, computePanel.isVisible else { return }
         let pointer = NSEvent.mouseLocation
         if !panel.frame.contains(pointer) && !computePanel.frame.contains(pointer) {
             computePanel.orderOut(nil)
@@ -1732,26 +1877,99 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func closeWorkoutsPopupIfPointerIsOutside() {
-        guard let panel, let workoutsPanel, workoutsPanel.isVisible else { return }
+        guard let panel = anchorPanel, let workoutsPanel, workoutsPanel.isVisible else { return }
         let pointer = NSEvent.mouseLocation
         if !panel.frame.contains(pointer) && !workoutsPanel.frame.contains(pointer) {
             workoutsPanel.orderOut(nil)
         }
     }
 
-    private func positionPanel() {
-        guard let panel, let screen = targetScreen() else { return }
-        let frame = NSRect(
+    private func makeBarPanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: Metrics.panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .statusBar
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        // Tutte le copie condividono gli stessi model: il contenuto resta
+        // allineato su ogni schermo senza duplicare timer o letture di sistema.
+        panel.contentView = NSHostingView(
+            rootView: BatteryBarView(
+                batteryModel: batteryModel,
+                wifiModel: wifiModel,
+                dateTimeModel: dateTimeModel,
+                calendarModel: calendarModel,
+                weatherModel: weatherModel,
+                healthModel: healthModel,
+                voiceCaptureModel: voiceCaptureModel,
+                onComputeClick: { [weak self] in self?.toggleComputePopup() },
+                onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
+                onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
+                onCalendarJoinClick: { [weak self] in self?.joinCurrentMeeting() },
+                onWeatherClick: { [weak self] in self?.toggleWeatherPopup() },
+                onWorkoutsClick: { [weak self] in self?.toggleWorkoutsPopup() },
+                onVoiceCaptureClick: { [weak self] in self?.toggleVoiceCapture() }
+            )
+        )
+        return panel
+    }
+
+    /// Allinea l'insieme dei pannelli agli schermi collegati: riusa quelli già
+    /// esistenti, ne crea per i monitor nuovi e chiude quelli rimasti orfani
+    /// dopo lo scollegamento di un display.
+    private func rebuildPanels() {
+        var live: [CGDirectDisplayID: NSPanel] = [:]
+        for screen in NSScreen.screens {
+            guard let id = displayID(of: screen) else { continue }
+            let panel = panels[id] ?? makeBarPanel()
+            panel.setFrame(barFrame(for: screen), display: true)
+            panel.orderFrontRegardless()
+            live[id] = panel
+        }
+        for (id, panel) in panels where live[id] == nil {
+            if activeBarPanel === panel { activeBarPanel = nil }
+            panel.orderOut(nil)
+        }
+        panels = live
+    }
+
+    private func barFrame(for screen: NSScreen) -> NSRect {
+        NSRect(
             x: screen.frame.minX,
             y: screen.frame.maxY - Metrics.panelSize.height - Metrics.topMargin,
             width: screen.frame.width,
             height: Metrics.panelSize.height
         )
-        panel.setFrame(frame, display: true)
     }
 
-    private func targetScreen() -> NSScreen? {
-        NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main
+    private func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    /// La barra a cui ancorare i popup: quella cliccata per ultima, altrimenti
+    /// quella dello schermo attivo.
+    private var anchorPanel: NSPanel? {
+        if let activeBarPanel { return activeBarPanel }
+        if let main = NSScreen.main, let id = displayID(of: main), let panel = panels[id] { return panel }
+        for screen in NSScreen.screens {
+            if let id = displayID(of: screen), let panel = panels[id] { return panel }
+        }
+        return nil
+    }
+
+    /// Il click su un'icona arriva sempre dalla barra sotto al puntatore.
+    private func updateActiveBarPanel() {
+        let pointer = NSEvent.mouseLocation
+        if let panel = panels.values.first(where: { $0.frame.contains(pointer) }) {
+            activeBarPanel = panel
+        }
     }
 }
 

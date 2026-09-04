@@ -28,6 +28,59 @@ func sh(_ cmd: String) -> String {
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+// MARK: - SSID
+
+// macOS oscura l'SSID (`<redacted>`) a chi non ha il permesso Location
+// Services, quindi `ipconfig getsummary` e `networksetup -getairportnetwork`
+// sono inutilizzabili. Il nome resta però leggibile nel CachedScanRecord che
+// `scutil` espone come plist archiviato: ne estraiamo la prima stringa che
+// somigli a un SSID, esattamente come faceva plugins/vpn.sh.
+
+private let ssidCachePath = "/tmp/sketchybar_ssid_cache"
+private let ssidCacheMaxAge: TimeInterval = 60
+
+private func looksLikeSSID(_ s: String) -> Bool {
+    guard (1...32).contains(s.count), !s.contains(":"), s != "$null", s != "root" else { return false }
+    if s.range(of: "^[A-Z0-9][A-Z0-9_]*$", options: .regularExpression) != nil { return false }
+    if s.range(of: "^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$", options: .regularExpression) != nil { return false }
+    return true
+}
+
+private func scanRecordSSID() -> String {
+    let dump = sh("printf 'open\\nshow State:/Network/Interface/en0/AirPort\\n' | scutil 2>/dev/null")
+    guard let marker = dump.range(of: "CachedScanRecord : <data> 0x") else { return "" }
+    let hex = dump[marker.upperBound...].prefix { $0.isHexDigit }
+    var bytes = [UInt8](); bytes.reserveCapacity(hex.count / 2)
+    var i = hex.startIndex
+    while i < hex.endIndex {
+        guard let j = hex.index(i, offsetBy: 2, limitedBy: hex.endIndex), j > i,
+              let byte = UInt8(hex[i..<j], radix: 16) else { break }
+        bytes.append(byte); i = j
+    }
+    guard !bytes.isEmpty,
+          let plist = try? PropertyListSerialization.propertyList(from: Data(bytes), options: [], format: nil),
+          let objects = (plist as? [String: Any])?["$objects"] as? [Any] else { return "" }
+    for case let candidate as String in objects where looksLikeSSID(candidate) { return candidate }
+    return ""
+}
+
+// Il file di cache resta il punto di scambio con plugins/vpn.sh: se un giorno
+// quello script tornasse a girare, i due processi si riusano il risultato
+// invece di interrogare `scutil` a turno.
+func currentSSID() -> String {
+    let fm = FileManager.default
+    if let modified = (try? fm.attributesOfItem(atPath: ssidCachePath))?[.modificationDate] as? Date,
+       Date().timeIntervalSince(modified) < ssidCacheMaxAge,
+       let cached = try? String(contentsOfFile: ssidCachePath, encoding: .utf8) {
+        let trimmed = cached.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+    }
+    let detected = scanRecordSSID()
+    let value = detected.isEmpty ? "WiFi" : detected
+    try? value.write(toFile: ssidCachePath, atomically: true, encoding: .utf8)
+    return value
+}
+
 // MARK: - Detection
 
 struct DetectedState {
@@ -37,9 +90,7 @@ struct DetectedState {
 
 func detectNetwork() -> DetectedState {
     var d = DetectedState()
-    let cached = (try? String(contentsOfFile: "/tmp/sketchybar_ssid_cache", encoding: .utf8))?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    d.ssid = cached.isEmpty ? "WiFi" : cached
+    d.ssid = currentSSID()
     d.wifi = !sh("networksetup -getairportpower en0 2>/dev/null").lowercased().contains("off")
     let nc = sh("scutil --nc list 2>/dev/null").lowercased()
     d.tailscale = nc.contains("tailscale") && nc.contains("(connected)")
