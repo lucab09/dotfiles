@@ -2,6 +2,7 @@
 *.bak
 .pi/
 .config/pmmgmt/gcal_credentials.json
+.config/pmmgmt/jira_tokens.json
 
 # Swift plugins are compiled locally by setup.sh
 .config/sketchybar/plugins/calendar_notch
