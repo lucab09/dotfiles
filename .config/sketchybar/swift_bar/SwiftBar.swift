@@ -4,7 +4,14 @@ import IOKit.ps
 import CoreWLAN
 
 private enum Metrics {
-    static let panelSize = NSSize(width: 310, height: 50)
+    /// Altezza della striscia disegnata (widget e sfondo vetrato): coincide
+    /// con l'`external_bar` di yabai.
+    static let barContentHeight: CGFloat = 50
+    /// Il gutter di yabai (`top_padding`/`window_gap`): sotto la barra resta
+    /// scoperto, quindi il pannello lo include per poterci centrare dentro la
+    /// pillola dell'orologio.
+    static let windowGap: CGFloat = 12
+    static let panelSize = NSSize(width: 310, height: barContentHeight + windowGap)
     static let topMargin: CGFloat = 0
     static let outerRadius: CGFloat = 0
     static let contentRightInset: CGFloat = 8
@@ -24,8 +31,29 @@ private enum Metrics {
     static let batteryWeatherSpacing: CGFloat = 6
     static let weatherDateSpacing: CGFloat = 6
 
-    static var weatherRightInset: CGFloat {
-        contentRightInset + dateTimeWidth + weatherDateSpacing
+    /// Larghezza della pillola grigia che ospita data e ora sugli schermi
+    /// senza notch, dove l'orologio vive al centro della barra.
+    static let dateTimePillRadius: CGFloat = 25
+    static let dateTimePillHorizontalPadding: CGFloat = 14
+    /// Margine sopra e sotto la pillola: l'altezza viene ricavata da questo,
+    /// così i due lati restano identici invece di dipendere dal padding della
+    /// barra e dall'altezza naturale delle due righe di testo.
+    static let dateTimePillMargin: CGFloat = windowGap
+    static var dateTimePillHeight: CGFloat { panelSize.height - 2 * dateTimePillMargin }
+    static let dateTimePillColor = Color(red: 1.0, green: 0.29, blue: 0.16)
+
+    /// Inter, installato in ~/Library/Fonts. `Font.custom` cade sul font di
+    /// sistema se manca, quindi la barra parte comunque su una macchina
+    /// dove non è ancora stato installato.
+    static func inter(_ size: CGFloat, _ weight: String) -> Font {
+        .custom("Inter18pt-\(weight)", size: size)
+    }
+
+    /// Senza notch data e ora lasciano la coda della barra per il centro:
+    /// tutto ciò che sta a destra scorre di conseguenza e i popup vanno
+    /// ancorati alla nuova posizione delle icone.
+    static func weatherRightInset(hasNotch: Bool) -> CGFloat {
+        hasNotch ? contentRightInset + dateTimeWidth + weatherDateSpacing : contentRightInset
     }
 
     /// In carica il widget batteria ospita anche il fulmine: la larghezza
@@ -35,13 +63,13 @@ private enum Metrics {
         isCharging ? batteryWidth + batteryBoltSpacing + chargingBoltWidth : batteryWidth
     }
 
-    static func wifiIconRightInset(isCharging: Bool) -> CGFloat {
-        weatherRightInset + weatherWidth + batteryWeatherSpacing
+    static func wifiIconRightInset(isCharging: Bool, hasNotch: Bool) -> CGFloat {
+        weatherRightInset(hasNotch: hasNotch) + weatherWidth + batteryWeatherSpacing
             + batteryWidth(isCharging: isCharging) + wifiBatterySpacing
     }
 
-    static func computeIconRightInset(isCharging: Bool) -> CGFloat {
-        wifiIconRightInset(isCharging: isCharging) + iconWidth + computeWiFiSpacing
+    static func computeIconRightInset(isCharging: Bool, hasNotch: Bool) -> CGFloat {
+        wifiIconRightInset(isCharging: isCharging, hasNotch: hasNotch) + iconWidth + computeWiFiSpacing
     }
 }
 
@@ -261,28 +289,65 @@ private final class ComputeModel: ObservableObject {
 
 private final class DateTimeModel: ObservableObject {
     @Published private(set) var text = "--/--/-- --:--"
+    /// Riga principale della pillola centrale: "mer 9 set".
+    @Published private(set) var dayLine = "--"
+    @Published private(set) var year = "----"
+    @Published private(set) var time = "--:--"
     private let formatter: DateFormatter
+    private let dayFormatter: DateFormatter
+    private let yearFormatter: DateFormatter
+    private let timeFormatter: DateFormatter
     private var timer: Timer?
 
     init() {
+        let locale = Locale(identifier: "it_IT")
         formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "it_IT")
+        formatter.locale = locale
         formatter.dateFormat = "dd/MM/yy HH:mm"
+        dayFormatter = DateFormatter()
+        dayFormatter.locale = locale
+        dayFormatter.dateFormat = "EEE d MMM"
+        yearFormatter = DateFormatter()
+        yearFormatter.locale = locale
+        yearFormatter.dateFormat = "yyyy"
+        timeFormatter = DateFormatter()
+        timeFormatter.locale = locale
+        timeFormatter.dateFormat = "HH:mm"
     }
 
     func start() {
         refresh()
-        timer = Timer.scheduledTimer(
-            timeInterval: 15,
-            target: self,
-            selector: #selector(refresh),
-            userInfo: nil,
-            repeats: true
-        )
+        scheduleNextTick()
+    }
+
+    /// Un timer one-shot allineato al secondo :00 successivo: l'orologio
+    /// cambia insieme al minuto di sistema e si riallinea da solo dopo uno
+    /// sleep, invece di derivare come farebbe un intervallo fisso.
+    private func scheduleNextTick() {
+        timer?.invalidate()
+        let now = Date()
+        let nextMinute = Calendar.current.nextDate(
+            after: now,
+            matching: DateComponents(second: 0),
+            matchingPolicy: .nextTime
+        ) ?? now.addingTimeInterval(60)
+        let timer = Timer(fireAt: nextMinute, interval: 0, target: self, selector: #selector(tick), userInfo: nil, repeats: false)
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    @objc private func tick() {
+        refresh()
+        scheduleNextTick()
     }
 
     @objc func refresh() {
-        text = formatter.string(from: Date())
+        let now = Date()
+        text = formatter.string(from: now)
+        dayLine = dayFormatter.string(from: now).capitalized
+        year = yearFormatter.string(from: now)
+        time = timeFormatter.string(from: now)
     }
 }
 
@@ -1477,6 +1542,9 @@ private struct BatteryBarView: View {
     @ObservedObject var weatherModel: WeatherStatusModel
     @ObservedObject var healthModel: HealthStatusModel
     @ObservedObject var voiceCaptureModel: VoiceCaptureModel
+    /// Lo schermo che ospita questa copia della barra ha il notch: solo lì
+    /// serve lo sfondo vetrato che ne maschera i lati.
+    let hasNotch: Bool
     let onComputeClick: () -> Void
     let onWiFiClick: () -> Void
     let onCalendarClick: () -> Void
@@ -1486,6 +1554,70 @@ private struct BatteryBarView: View {
     let onVoiceCaptureClick: () -> Void
 
     var body: some View {
+        VStack(spacing: 0) {
+            bar
+                .padding(8)
+                .frame(height: Metrics.barContentHeight)
+                .background {
+                    if hasNotch {
+                        ZStack {
+                            GlassBackground()
+                            Color.black.opacity(0.18)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: Metrics.outerRadius, style: .continuous))
+                    }
+                }
+
+            Spacer(minLength: 0)
+        }
+        // Senza notch il centro della barra è libero: l'orologio ci si
+        // installa dentro la pillola arancione invece di restare in coda.
+        // L'overlay copre anche il gutter, così i margini sopra e sotto la
+        // pillola sono quelli che separano le finestre dal bordo dello schermo.
+        .overlay {
+            if !hasNotch {
+                dateTimePill
+            }
+        }
+    }
+
+    /// Data a sinistra (giorno, mese, numero e sotto l'anno) e ora digitale a
+    /// destra, dentro la pillola arancione che sostituisce l'orologio in coda.
+    private var dateTimePill: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: -1) {
+                Text(dateTimeModel.dayLine)
+                    .font(Metrics.inter(13, "Medium"))
+                Text(dateTimeModel.year)
+                    .font(Metrics.inter(13, "Medium"))
+                    .opacity(0.85)
+            }
+
+            Text(dateTimeModel.time)
+                .font(Metrics.inter(20, "SemiBold"))
+                .monospacedDigit()
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, Metrics.dateTimePillHorizontalPadding)
+        .frame(height: Metrics.dateTimePillHeight)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.dateTimePillRadius, style: .continuous)
+                .fill(Metrics.dateTimePillColor)
+                // Ombra sfalsata a destra: l'altezza del pannello lascia poco
+                // margine sotto, quindi il grosso dello scostamento va in x.
+                .shadow(color: .black.opacity(0.28), radius: 5, x: 4, y: 1)
+        )
+        .allowsHitTesting(false)
+    }
+
+    private var dateTimeLabel: some View {
+        Text(dateTimeModel.text)
+            .font(.system(size: 14, weight: .medium, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(Color(red: 0.79, green: 0.77, blue: 0.81))
+    }
+
+    private var bar: some View {
         HStack(spacing: 0) {
             // Gruppo di sinistra: calendario e salute aderiscono al contenuto,
             // così le metriche restano a fianco del testo dell'evento invece di
@@ -1553,23 +1685,14 @@ private struct BatteryBarView: View {
             }
             .buttonStyle(.plain)
 
-            Spacer().frame(width: Metrics.weatherDateSpacing)
+            if hasNotch {
+                Spacer().frame(width: Metrics.weatherDateSpacing)
 
-            Text(dateTimeModel.text)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Color(red: 0.79, green: 0.77, blue: 0.81))
-                .frame(width: Metrics.dateTimeWidth, alignment: .center)
-        }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(8)
-            .background {
-                ZStack {
-                    GlassBackground()
-                    Color.black.opacity(0.18)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: Metrics.outerRadius, style: .continuous))
+                dateTimeLabel
+                    .frame(width: Metrics.dateTimeWidth, alignment: .center)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
@@ -1585,6 +1708,9 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     /// Un pannello per schermo, indicizzato sul display ID: la barra deve
     /// comparire su tutti i monitor, non solo su quello col notch.
     private var panels: [CGDirectDisplayID: NSPanel] = [:]
+    /// Stato del notch con cui ogni pannello è stato costruito: se cambia
+    /// (display sostituito sullo stesso ID) il pannello va rifatto.
+    private var panelNotchState: [CGDirectDisplayID: Bool] = [:]
     /// Barra su cui è avvenuto l'ultimo click: i popup si ancorano a quella,
     /// così si aprono sullo schermo con cui l'utente sta interagendo.
     private weak var activeBarPanel: NSPanel?
@@ -1707,10 +1833,10 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     private func positionComputePopup() {
         guard let panel = anchorPanel, let computePanel else { return }
         let gap: CGFloat = 6
-        let anchorRight = panel.frame.maxX - Metrics.computeIconRightInset(isCharging: batteryModel.isCharging)
+        let anchorRight = panel.frame.maxX - Metrics.computeIconRightInset(isCharging: batteryModel.isCharging, hasNotch: anchorHasNotch(panel))
         let frame = NSRect(
             x: anchorRight - computePanel.frame.width,
-            y: panel.frame.minY - computePanel.frame.height - gap,
+            y: barBottomY(of: panel) - computePanel.frame.height - gap,
             width: computePanel.frame.width,
             height: computePanel.frame.height
         )
@@ -1759,7 +1885,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         // variabile del calendario.
         let frame = NSRect(
             x: panel.frame.minX + 8,
-            y: panel.frame.minY - workoutsPanel.frame.height - gap,
+            y: barBottomY(of: panel) - workoutsPanel.frame.height - gap,
             width: workoutsPanel.frame.width,
             height: workoutsPanel.frame.height
         )
@@ -1773,8 +1899,8 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
         guard let panel = anchorPanel else { return }
-        let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset(isCharging: batteryModel.isCharging)
-        sendNetworkPopupCommand("toggle \(anchorRight)")
+        let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset(isCharging: batteryModel.isCharging, hasNotch: anchorHasNotch(panel))
+        sendNetworkPopupCommand("toggle \(anchorRight) \(barBottomY(of: panel))")
     }
 
     /// Apre il link alla videochiamata dell'evento in primo piano. Chiude prima
@@ -1786,11 +1912,15 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func toggleCalendarPopup() {
+        updateActiveBarPanel()
         computePanel?.orderOut(nil)
         workoutsPanel?.orderOut(nil)
         sendNetworkPopupCommand("hide")
         hideWeatherPopup()
-        sendCalendarPopupCommand("toggle")
+        guard let panel = anchorPanel else { return }
+        // Il calendario è il widget più a sinistra: l'ancora è l'angolo in
+        // basso a sinistra della barra che ha ricevuto il click.
+        sendCalendarPopupCommand("toggle \(panel.frame.minX) \(barBottomY(of: panel))")
     }
 
     private func toggleWeatherPopup() {
@@ -1801,13 +1931,14 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         sendCalendarPopupCommand("hide")
 
         guard let panel = anchorPanel else { return }
-        let anchorRight = panel.frame.maxX - Metrics.weatherRightInset
+        let anchorRight = panel.frame.maxX - Metrics.weatherRightInset(hasNotch: anchorHasNotch(panel))
         let scriptURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/sketchybar/plugins/weather_popup_toggle.sh")
         let process = Process()
         process.executableURL = scriptURL
         var environment = ProcessInfo.processInfo.environment
         environment["WEATHER_POPUP_ANCHOR_X"] = "\(anchorRight)"
+        environment["WEATHER_POPUP_ANCHOR_Y"] = "\(barBottomY(of: panel))"
         process.environment = environment
         process.standardOutput = Pipe()
         process.standardError = Pipe()
@@ -1884,7 +2015,23 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func makeBarPanel() -> NSPanel {
+    private static func hasNotch(_ screen: NSScreen?) -> Bool {
+        (screen?.safeAreaInsets.top ?? 0) > 0
+    }
+
+    /// Il notch dello schermo a cui è ancorato il popup: senza notch le icone
+    /// di destra sono più a destra, perché l'orologio è passato al centro.
+    /// Il bordo inferiore della striscia visibile: il pannello scende più in
+    /// basso per includere il gutter, ma i popup vanno appesi alla barra.
+    private func barBottomY(of panel: NSPanel) -> CGFloat {
+        panel.frame.maxY - Metrics.barContentHeight
+    }
+
+    private func anchorHasNotch(_ panel: NSPanel) -> Bool {
+        Self.hasNotch(panel.screen ?? NSScreen.screens.first { $0.frame.intersects(panel.frame) })
+    }
+
+    private func makeBarPanel(hasNotch: Bool) -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Metrics.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -1909,6 +2056,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
                 weatherModel: weatherModel,
                 healthModel: healthModel,
                 voiceCaptureModel: voiceCaptureModel,
+                hasNotch: hasNotch,
                 onComputeClick: { [weak self] in self?.toggleComputePopup() },
                 onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
                 onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
@@ -1926,18 +2074,27 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     /// dopo lo scollegamento di un display.
     private func rebuildPanels() {
         var live: [CGDirectDisplayID: NSPanel] = [:]
+        var liveNotch: [CGDirectDisplayID: Bool] = [:]
         for screen in NSScreen.screens {
             guard let id = displayID(of: screen) else { continue }
-            let panel = panels[id] ?? makeBarPanel()
+            let hasNotch = Self.hasNotch(screen)
+            let reusable = panelNotchState[id] == hasNotch ? panels[id] : nil
+            if let stale = panels[id], stale !== reusable {
+                if activeBarPanel === stale { activeBarPanel = nil }
+                stale.orderOut(nil)
+            }
+            let panel = reusable ?? makeBarPanel(hasNotch: hasNotch)
             panel.setFrame(barFrame(for: screen), display: true)
             panel.orderFrontRegardless()
             live[id] = panel
+            liveNotch[id] = hasNotch
         }
         for (id, panel) in panels where live[id] == nil {
             if activeBarPanel === panel { activeBarPanel = nil }
             panel.orderOut(nil)
         }
         panels = live
+        panelNotchState = liveNotch
     }
 
     private func barFrame(for screen: NSScreen) -> NSRect {

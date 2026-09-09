@@ -8,6 +8,12 @@ SWIFT_BAR_DIR="$CONFIG_DIR/swift_bar"
 # barra nativa e tutti i suoi item vengono rimossi: l'unica UI visibile è la
 # barra Swift/AppKit avviata qui sotto.
 sketchybar --remove '/.*/' 2>/dev/null || true
+# `drawing=off` da solo non basta: la barra nativa continua a dipingere la sua
+# striscia (height 25, color 0x44000000) sopra al wallpaper. Azzerare anche
+# colore e altezza la rende davvero invisibile.
+sketchybar --bar color=0x00000000 border_color=0x00000000 border_width=0 height=0 shadow=off blur_radius=0
+# `drawing` va spento a parte: nello stesso comando che cambia l'altezza torna
+# su `on` da solo.
 sketchybar --bar drawing=off
 
 # Chiude eventuali popup rimasti aperti durante un reload.
