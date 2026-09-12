@@ -6,14 +6,20 @@ yabai -m config layout bsp
 # Nuove finestre appaiono a destra/sotto
 yabai -m config window_placement second_child
 
-# Lascia spazio alla barra Swift, alta 50 px e aderente al bordo superiore.
-yabai -m config external_bar all:50:0
+# La barra Swift è una colonna verticale larga 64 px sul bordo destro:
+# `external_bar` riserva solo spazio sopra/sotto, quindi niente riserva lì
+# e la colonna viene tenuta libera dal padding destro. Il solo `off` viene
+# rifiutato in silenzio: serve la forma completa `off:0:0`.
+yabai -m config external_bar off:0:0
 
-# Margine esterno di 12 px su ogni lato; conserva il gap tra finestre.
+# Margine esterno di 12 px su ogni lato. A destra: colonna (64) meno il
+# margine interno delle card (6, card da 52 centrate) più il gap (12), così
+# tra finestra e card resta lo stesso spazio degli altri bordi. Da tenere
+# allineato a `Metrics.sidebarWidth` e `Metrics.cardWidth`.
 yabai -m config top_padding    12
 yabai -m config bottom_padding 12
 yabai -m config left_padding   12
-yabai -m config right_padding  12
+yabai -m config right_padding  70
 yabai -m config window_gap     12
 
 # Bilanciamento automatico spazio quando si apre/chiude una finestra

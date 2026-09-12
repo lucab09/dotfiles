@@ -90,7 +90,10 @@ final class WeatherPopupApp: NSObject, NSApplicationDelegate {
             .map { CGFloat($0) }
         anchorRect = NSRect(x: launchMouse.x - 130, y: launchMouse.y - 30, width: 260, height: 70)
         launchedAt = Date()
-        let frame = panelFrame(size: size, mouse: launchMouse, anchorRightX: configuredAnchorX)
+        let configuredAnchorTop = ProcessInfo.processInfo.environment["WEATHER_POPUP_ANCHOR_Y"]
+            .flatMap(Double.init)
+            .map { CGFloat($0) }
+        let frame = panelFrame(size: size, mouse: launchMouse, anchorRightX: configuredAnchorX, anchorTop: configuredAnchorTop)
         let panel = NSPanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -115,7 +118,7 @@ final class WeatherPopupApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func panelFrame(size: NSSize, mouse: CGPoint, anchorRightX: CGFloat?) -> NSRect {
+    private func panelFrame(size: NSSize, mouse: CGPoint, anchorRightX: CGFloat?, anchorTop: CGFloat?) -> NSRect {
         let screen = NSScreen.screens.first { screen in
             if let anchorRightX {
                 return anchorRightX >= screen.frame.minX && anchorRightX <= screen.frame.maxX
@@ -128,7 +131,10 @@ final class WeatherPopupApp: NSObject, NSApplicationDelegate {
         // esattamente sull'ancora.
         let proposedX = anchorRightX.map { $0 - size.width + 2 } ?? (mouse.x - 72)
         let x = min(max(frame.minX, proposedX), frame.maxX - size.width)
-        let y = frame.maxY - size.height - 56
+        // La barra verticale passa il bordo superiore desiderato (all'altezza
+        // del widget): lo teniamo dentro lo schermo con 12 pt di margine.
+        let proposedY = anchorTop.map { $0 - size.height } ?? (frame.maxY - size.height - 56)
+        let y = min(max(frame.minY + 12, proposedY), frame.maxY - size.height - 12)
         return NSRect(origin: CGPoint(x: x, y: y), size: size)
     }
 

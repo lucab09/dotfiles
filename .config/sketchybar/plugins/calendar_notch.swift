@@ -4393,7 +4393,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 final class NotchIPCServer {
     var onShow: (() -> Void)?
     var onHide: (() -> Void)?
-    var onToggle: (() -> Void)?
+    /// `toggle [bordo destro] [bordo superiore]`: la barra verticale passa
+    /// dove aprire il popup, alla sinistra del widget calendario.
+    var onToggle: ((NSPoint?) -> Void)?
 
     func start() {
         let path = "/tmp/calendar_notch.sock"
@@ -4425,7 +4427,11 @@ final class NotchIPCServer {
                 DispatchQueue.main.async {
                     if msg == "show" { self?.onShow?() }
                     else if msg == "hide" { self?.onHide?() }
-                    else if msg == "toggle" { self?.onToggle?() }
+                    else if msg.hasPrefix("toggle") {
+                        let values = msg.split(separator: " ").dropFirst().compactMap { Double($0) }
+                        let anchor = values.count == 2 ? NSPoint(x: values[0], y: values[1]) : nil
+                        self?.onToggle?(anchor)
+                    }
                 }
             }
         }
@@ -4466,6 +4472,8 @@ final class NotchPanelController: NSObject {
     private var hostingView: PointingHandHostingView<CalendarNotchView>?
     private var notchScreen: NSScreen?
     private var notchRect: NSRect = .zero
+    /// Angolo in alto a destra richiesto dalla barra per il popup aperto.
+    private var popupAnchor: NSPoint?
     private var screenObserver: NSObjectProtocol?
     private var dayTimer: Timer?
     private let ipc = NotchIPCServer()
@@ -4503,7 +4511,7 @@ final class NotchPanelController: NSObject {
         }
         ipc.onShow = { [weak self] in self?.expand() }
         ipc.onHide = { [weak self] in self?.collapse() }
-        ipc.onToggle = { [weak self] in self?.toggle() }
+        ipc.onToggle = { [weak self] anchor in self?.toggle(anchor: anchor) }
         ipc.start()
     }
 
@@ -4584,7 +4592,8 @@ final class NotchPanelController: NSObject {
     /// Click sul widget calendario della barra Swift: unico modo di aprire e
     /// chiudere il popup. Il puntatore non entra in gioco: entrare o uscire
     /// dall'area del pannello non lo apre né lo chiude.
-    private func toggle() {
+    private func toggle(anchor: NSPoint?) {
+        popupAnchor = anchor ?? popupAnchor
         if presentation.isExpanded {
             collapse()
         } else {
@@ -4695,6 +4704,18 @@ final class NotchPanelController: NSObject {
     }
 
     private var expandedFrame: NSRect {
+        if let popupAnchor,
+           let screen = NSScreen.screens.first(where: {
+               popupAnchor.x >= $0.frame.minX && popupAnchor.x <= $0.frame.maxX
+           }) {
+            // Alla sinistra della colonna, col bordo superiore all'altezza del
+            // widget e senza uscire dallo schermo.
+            let margin: CGFloat = 12
+            let width = min(expandedWidth, screen.frame.width - 2 * margin)
+            let height = min(expandedHeight, screen.frame.height - 2 * margin)
+            let y = min(max(popupAnchor.y - height, screen.frame.minY + margin), screen.frame.maxY - margin - height)
+            return NSRect(x: popupAnchor.x - width, y: y, width: width, height: height)
+        }
         guard let screen = notchScreen else { return closedFrame }
         let width = min(expandedWidth, screen.frame.width - 24)
         let height = min(expandedHeight, screen.frame.height - 24)

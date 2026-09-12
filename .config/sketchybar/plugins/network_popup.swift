@@ -190,7 +190,7 @@ func detectNetwork() -> DetectedState {
 // MARK: - IPC Server (Unix socket)
 
 final class IPCServer {
-    var onToggle: ((CGFloat) -> Void)?
+    var onToggle: ((CGFloat, CGFloat?) -> Void)?
     var onHide: (() -> Void)?
     var onState:  ((String, Bool, Bool, Bool, Bool) -> Void)?
 
@@ -230,8 +230,11 @@ final class IPCServer {
         let parts = msg.components(separatedBy: " ")
         guard let cmd = parts.first else { return }
         if cmd == "toggle" {
+            // `toggle <bordo destro> [bordo superiore]`: la barra verticale
+            // passa anche l'altezza del widget cliccato.
             let x = CGFloat(Double(parts.dropFirst().first ?? "0") ?? 0)
-            DispatchQueue.main.async { self.onToggle?(x) }
+            let top = parts.count > 2 ? Double(parts[2]).map { CGFloat($0) } : nil
+            DispatchQueue.main.async { self.onToggle?(x, top) }
         } else if cmd == "hide" {
             DispatchQueue.main.async { self.onHide?() }
         } else if cmd == "state" {
@@ -373,7 +376,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var refreshInProgress = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        ipc.onToggle = { [weak self] x in self?.toggle(anchorX: x) }
+        ipc.onToggle = { [weak self] x, top in self?.toggle(anchorX: x, top: top) }
         ipc.onHide = { [weak self] in self?.hide() }
         ipc.onState  = { [weak self] ssid, wifi, ts, nord, aws in
             guard let s = self?.state else { return }
@@ -419,31 +422,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hosting = h; panel = p
     }
 
-    func toggle(anchorX: CGFloat) {
+    func toggle(anchorX: CGFloat, top: CGFloat?) {
         if panel == nil { buildPanel() }
         guard let p = panel else { return }
-        p.isVisible ? hide() : show(anchorX: anchorX)
+        p.isVisible ? hide() : show(anchorX: anchorX, top: top)
     }
 
-    func show(anchorX: CGFloat) {
+    func show(anchorX: CGFloat, top: CGFloat?) {
         guard let p = panel, let h = hosting else { return }
         self.anchorX = anchorX
         let H = max(h.fittingSize.height, 200)
         let screen = NSScreen.screens.first(where: {
             anchorX >= $0.frame.minX && anchorX <= $0.frame.maxX
         }) ?? NSScreen.main!
-        // La barra Swift è alta 50 pt ed è aderente al bordo superiore.
-        let barBottom = screen.frame.maxY - 50
-        // Il popup si sviluppa verso sinistra: il bordo destro coincide
-        // esattamente con il bordo destro dell'icona che lo ha aperto.
+        // La barra Swift è una colonna sul bordo destro: il popup si apre alla
+        // sua sinistra, col bordo superiore all'altezza del widget cliccato e
+        // senza uscire dallo schermo.
+        let margin: CGFloat = 12
         let px = anchorX - popupWidth
-        let py = barBottom - H - 6
+        let desiredTop = top ?? (screen.frame.maxY - margin)
+        let py = min(max(desiredTop - H, screen.frame.minY + margin), screen.frame.maxY - margin - H)
         p.setFrame(NSRect(x: px, y: py, width: popupWidth, height: H), display: true)
         p.makeKeyAndOrderFront(nil)
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self = self, let p = self.panel else { return }
             let clickPoint = NSEvent.mouseLocation
-            // Il click sull'icona Wi-Fi della barra deve arrivare al comando
+            // Il click sulla colonna della barra deve arrivare al comando
             // `toggle`: non chiudiamo qui il popup per poi riaprirlo subito.
             if self.isAnchorClick(clickPoint) { return }
             if !p.frame.contains(clickPoint) { self.hide() }
@@ -460,9 +464,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let screen = NSScreen.screens.first(where: {
                   anchorX >= $0.frame.minX && anchorX <= $0.frame.maxX
               }) else { return false }
-        let barBottom = screen.frame.maxY - 50
-        return point.x >= anchorX - 32 && point.x <= anchorX + 8
-            && point.y >= barBottom && point.y <= screen.frame.maxY
+        // Tutto ciò che sta a destra del bordo del popup è la colonna della
+        // barra: gli altri widget chiudono il popup via `hide`.
+        return point.x >= anchorX && point.x <= screen.frame.maxX
     }
 }
 

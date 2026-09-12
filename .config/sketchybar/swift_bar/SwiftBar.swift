@@ -4,73 +4,24 @@ import IOKit.ps
 import CoreWLAN
 
 private enum Metrics {
-    /// Altezza della striscia disegnata (widget e sfondo vetrato): coincide
-    /// con l'`external_bar` di yabai.
-    static let barContentHeight: CGFloat = 50
-    /// Il gutter di yabai (`top_padding`/`window_gap`): sotto la barra resta
-    /// scoperto, quindi il pannello lo include per poterci centrare dentro la
-    /// pillola dell'orologio.
+    /// Larghezza della colonna verticale sul bordo destro: yabai la tiene
+    /// libera con `right_padding` = sidebarWidth + windowGap.
+    static let sidebarWidth: CGFloat = 64
+    /// Il gutter di yabai (`window_gap`/padding): sopra e sotto la colonna
+    /// lasciamo lo stesso respiro che separa le finestre dai bordi.
     static let windowGap: CGFloat = 12
-    static let panelSize = NSSize(width: 310, height: barContentHeight + windowGap)
-    static let topMargin: CGFloat = 0
-    static let outerRadius: CGFloat = 0
-    static let contentRightInset: CGFloat = 8
-    static let batteryWidth: CGFloat = 68
-    static let chargingBoltWidth: CGFloat = 14
-    static let batteryBoltSpacing: CGFloat = 6
-    static let weatherWidth: CGFloat = 112
-    static let dateTimeWidth: CGFloat = 116
-    static let healthWidth: CGFloat = 146
+    static let sectionSpacing: CGFloat = 10
     static let iconWidth: CGFloat = 24
-    static let calendarJoinSpacing: CGFloat = 8
-    static let calendarHealthSpacing: CGFloat = 12
-    static let healthWorkoutsSpacing: CGFloat = 8
-    static let workoutsVoiceSpacing: CGFloat = 10
-    static let computeWiFiSpacing: CGFloat = 12
-    static let wifiBatterySpacing: CGFloat = 6
-    static let batteryWeatherSpacing: CGFloat = 6
-    static let weatherDateSpacing: CGFloat = 6
+    static let circleSize: CGFloat = 38
+    /// Distanza tra la colonna e i popup che si aprono alla sua sinistra.
+    static let popupGap: CGFloat = 8
+    /// Il popup si allinea poco sopra al punto cliccato, così il suo bordo
+    /// superiore cade all'altezza del widget che l'ha aperto.
+    static let popupAnchorLift: CGFloat = 24
 
-    /// Larghezza della pillola grigia che ospita data e ora sugli schermi
-    /// senza notch, dove l'orologio vive al centro della barra.
-    static let dateTimePillRadius: CGFloat = 25
-    static let dateTimePillHorizontalPadding: CGFloat = 14
-    /// Margine sopra e sotto la pillola: l'altezza viene ricavata da questo,
-    /// così i due lati restano identici invece di dipendere dal padding della
-    /// barra e dall'altezza naturale delle due righe di testo.
-    static let dateTimePillMargin: CGFloat = windowGap
-    static var dateTimePillHeight: CGFloat { panelSize.height - 2 * dateTimePillMargin }
-    static let dateTimePillColor = Color(red: 1.0, green: 0.29, blue: 0.16)
-
-    /// Inter, installato in ~/Library/Fonts. `Font.custom` cade sul font di
-    /// sistema se manca, quindi la barra parte comunque su una macchina
-    /// dove non è ancora stato installato.
-    static func inter(_ size: CGFloat, _ weight: String) -> Font {
-        .custom("Inter18pt-\(weight)", size: size)
-    }
-
-    /// Senza notch data e ora lasciano la coda della barra per il centro:
-    /// tutto ciò che sta a destra scorre di conseguenza e i popup vanno
-    /// ancorati alla nuova posizione delle icone.
-    static func weatherRightInset(hasNotch: Bool) -> CGFloat {
-        hasNotch ? contentRightInset + dateTimeWidth + weatherDateSpacing : contentRightInset
-    }
-
-    /// In carica il widget batteria ospita anche il fulmine: la larghezza
-    /// cresce di conseguenza, così lo spazio ai suoi lati resta identico a
-    /// quello degli altri widget invece di essere mangiato dall'icona.
-    static func batteryWidth(isCharging: Bool) -> CGFloat {
-        isCharging ? batteryWidth + batteryBoltSpacing + chargingBoltWidth : batteryWidth
-    }
-
-    static func wifiIconRightInset(isCharging: Bool, hasNotch: Bool) -> CGFloat {
-        weatherRightInset(hasNotch: hasNotch) + weatherWidth + batteryWeatherSpacing
-            + batteryWidth(isCharging: isCharging) + wifiBatterySpacing
-    }
-
-    static func computeIconRightInset(isCharging: Bool, hasNotch: Bool) -> CGFloat {
-        wifiIconRightInset(isCharging: isCharging, hasNotch: hasNotch) + iconWidth + computeWiFiSpacing
-    }
+    /// Font standard per i label testuali della barra.
+    static let barLabel: Font = .system(size: 13, weight: .medium, design: .rounded)
+    static let caption: Font = .system(size: 11, weight: .semibold, design: .rounded)
 }
 
 private struct BatterySnapshot {
@@ -288,31 +239,37 @@ private final class ComputeModel: ObservableObject {
 }
 
 private final class DateTimeModel: ObservableObject {
-    @Published private(set) var text = "--/--/-- --:--"
-    /// Riga principale della pillola centrale: "mer 9 set".
-    @Published private(set) var dayLine = "--"
+    /// L'orologio verticale impila ore e minuti: due righe corte stanno nella
+    /// colonna meglio di un "HH:mm" schiacciato.
+    @Published private(set) var hour = "--"
+    @Published private(set) var minute = "--"
+    /// "SAB", "12", "SET" e "2026" sotto l'ora, una riga ciascuno.
+    @Published private(set) var weekday = "--"
+    @Published private(set) var day = "--"
+    @Published private(set) var month = "--"
     @Published private(set) var year = "----"
-    @Published private(set) var time = "--:--"
-    private let formatter: DateFormatter
+    private let hourFormatter: DateFormatter
+    private let minuteFormatter: DateFormatter
+    private let weekdayFormatter: DateFormatter
     private let dayFormatter: DateFormatter
+    private let monthFormatter: DateFormatter
     private let yearFormatter: DateFormatter
-    private let timeFormatter: DateFormatter
     private var timer: Timer?
 
     init() {
         let locale = Locale(identifier: "it_IT")
-        formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.dateFormat = "dd/MM/yy HH:mm"
-        dayFormatter = DateFormatter()
-        dayFormatter.locale = locale
-        dayFormatter.dateFormat = "EEE d MMM"
-        yearFormatter = DateFormatter()
-        yearFormatter.locale = locale
-        yearFormatter.dateFormat = "yyyy"
-        timeFormatter = DateFormatter()
-        timeFormatter.locale = locale
-        timeFormatter.dateFormat = "HH:mm"
+        func make(_ format: String) -> DateFormatter {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.dateFormat = format
+            return formatter
+        }
+        hourFormatter = make("HH")
+        minuteFormatter = make("mm")
+        weekdayFormatter = make("EEE")
+        dayFormatter = make("d")
+        monthFormatter = make("MMM")
+        yearFormatter = make("yyyy")
     }
 
     func start() {
@@ -344,10 +301,12 @@ private final class DateTimeModel: ObservableObject {
 
     @objc func refresh() {
         let now = Date()
-        text = formatter.string(from: now)
-        dayLine = dayFormatter.string(from: now).capitalized
+        hour = hourFormatter.string(from: now)
+        minute = minuteFormatter.string(from: now)
+        weekday = weekdayFormatter.string(from: now).uppercased()
+        day = dayFormatter.string(from: now)
+        month = monthFormatter.string(from: now).uppercased()
         year = yearFormatter.string(from: now)
-        time = timeFormatter.string(from: now)
     }
 }
 
@@ -410,41 +369,52 @@ private final class CalendarStatusModel: ObservableObject {
     }
 }
 
+/// Evento in primo piano in formato colonna: esagono col colore del
+/// calendario e sotto il tempo che manca. Il titolo completo, che in
+/// verticale non ci starebbe, resta nel tooltip e nel popup.
 private struct CalendarStatusWidget: View {
     @ObservedObject var model: CalendarStatusModel
     private let neutral = Color(red: 0.79, green: 0.77, blue: 0.81)
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "hexagon.fill")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(model.hasEvent ? eventColor : neutral.opacity(0.38))
+        VStack(spacing: 4) {
+            Image(systemName: model.hasEvent ? "hexagon.fill" : "hexagon")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(model.hasEvent ? eventColor : neutral.opacity(0.5))
 
-            Text(label)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+            Text(shortLabel)
+                .font(Metrics.caption)
+                .monospacedDigit()
                 .foregroundStyle(neutral)
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .minimumScaleFactor(0.8)
         }
+        .frame(width: BarLayout.containerWidth)
+        .padding(.vertical, 9)
+        .barContainerBackground()
         .contentShape(Rectangle())
+        .help(fullLabel)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(label)
+        .accessibilityLabel(fullLabel)
     }
 
-    private var label: String {
+    private var duration: String {
+        let minutes = model.remainingMinutes
+        return minutes < 60 ? "\(minutes)m" : "\(minutes / 60)h\(String(format: "%02d", minutes % 60))"
+    }
+
+    private var shortLabel: String {
+        guard model.hasEvent else { return "—" }
+        if model.inProgress && model.hasMeetingLink { return "ora" }
+        return duration
+    }
+
+    private var fullLabel: String {
         guard model.hasEvent else { return "Nessun evento" }
-        let duration = model.remainingMinutes < 60
-            ? "\(model.remainingMinutes)m"
-            : "\(model.remainingMinutes / 60)h \(model.remainingMinutes % 60)m"
-        let text: String
         if model.inProgress {
-            text = model.hasMeetingLink ? model.title : "\(model.title) · \(duration)"
-        } else {
-            text = "\(model.title) · tra \(duration)"
+            return model.hasMeetingLink ? model.title : "\(model.title) · \(duration)"
         }
-        // Il gruppo di sinistra adotta la larghezza del contenuto: senza un
-        // limite un titolo lunghissimo spingerebbe il resto della barra.
-        return text.count > 52 ? text.prefix(51).trimmingCharacters(in: .whitespaces) + "…" : text
+        return "\(model.title) · tra \(duration)"
     }
 
     private var eventColor: Color {
@@ -468,34 +438,46 @@ private func calendarColor(fromHex hex: String, fallback: Color) -> Color {
     )
 }
 
-/// Pillola "Partecipa"/"Termina tra Xm" a fianco dell'evento: compare solo
-/// quando l'evento in primo piano ha un link alla videochiamata (finestra
-/// gestita da calendar_notch via `spotlightEvent`). Usa il verde di stato
-/// della barra, non il brand del provider: in mezzo a batteria e Wi-Fi un
-/// verde Meet / blu Zoom / viola Teams stonava.
+/// Pulsante "Partecipa" sotto l'evento: compare solo quando l'evento in
+/// primo piano ha un link alla videochiamata (finestra gestita da
+/// calendar_notch via `spotlightEvent`). In colonna diventa un cerchio con la
+/// videocamera; a chiamata iniziata mostra i minuti alla fine. Usa il verde
+/// di stato della barra, non il brand del provider: in mezzo a batteria e
+/// Wi-Fi un verde Meet / blu Zoom / viola Teams stonava.
 private struct CalendarJoinButton: View {
     @ObservedObject var model: CalendarStatusModel
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(barGreen)
-                .padding(.horizontal, 10)
-                .frame(height: 22)
-                .background(barGreen.opacity(0.16))
-                .overlay(Capsule().strokeBorder(barGreen.opacity(0.55), lineWidth: 1))
-                .clipShape(Capsule())
-                .contentShape(Capsule())
+            Group {
+                if let endsIn {
+                    Text("\(endsIn)m")
+                        .font(Metrics.caption)
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.7)
+                } else {
+                    Image(systemName: "video.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+            }
+            .foregroundStyle(barGreen)
+            .frame(width: Metrics.circleSize, height: Metrics.circleSize)
+            .background(Circle().fill(barGreen.opacity(0.16)))
+            .overlay(Circle().strokeBorder(barGreen.opacity(0.55), lineWidth: 1))
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private var endsIn: Int? {
+        model.inProgress ? model.endsInMinutes : nil
     }
 
     private var label: String {
-        guard model.inProgress, let endsIn = model.endsInMinutes else { return "Partecipa" }
+        guard let endsIn else { return "Partecipa" }
         return "Termina tra \(endsIn)m"
     }
 }
@@ -585,12 +567,12 @@ private struct WeatherStatusWidget: View {
                 .frame(width: 18, height: 20)
 
             Text(temperatureLabel)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(Metrics.barLabel)
                 .monospacedDigit()
                 .foregroundStyle(textColor)
 
             Text(model.city)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(Metrics.barLabel)
                 .foregroundStyle(textColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -823,7 +805,7 @@ private struct HealthStatusWidget: View {
     private static let strainBlue = Color(red: 0.50, green: 0.87, blue: 1.00)
 
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
             metric(
                 icon: "bed.double.fill",
                 value: model.sleepPerformance.map { "\($0)" },
@@ -842,20 +824,22 @@ private struct HealthStatusWidget: View {
                 color: model.dayStrain == nil ? Self.neutral : Self.strainBlue
             )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(width: BarLayout.containerWidth)
+        .padding(.vertical, 10)
+        .barContainerBackground()
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }
 
     private func metric(icon: String, value: String?, color: Color) -> some View {
-        HStack(spacing: 5) {
+        VStack(spacing: 3) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(value == nil ? Self.neutral.opacity(0.5) : color)
 
             Text(value ?? "--")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(Metrics.barLabel)
                 .monospacedDigit()
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -961,20 +945,19 @@ private struct WeeklyWorkoutsIcon: View {
         let available = count != nil
         let tint = available ? Self.accent : Self.accentMuted
 
-        HStack(spacing: 7) {
+        VStack(spacing: 3) {
             WorkoutMarkIcon(color: tint)
                 .frame(width: 16, height: 16)
 
             Text(count.map { "\($0)" } ?? "--")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .font(.system(size: 14, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(tint)
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 11)
-        .padding(.vertical, 3)
+        .frame(width: Metrics.circleSize)
+        .padding(.vertical, 8)
         .background(Capsule(style: .continuous).fill(Self.pill))
         .contentShape(Capsule(style: .continuous))
         .accessibilityElement(children: .combine)
@@ -1027,6 +1010,185 @@ private struct VoiceCaptureIcon: View {
         case .processing: return "Trascrizione in corso"
         case .saved: return "Task creato"
         }
+    }
+}
+
+/// Elemento di design system: cerchio con effetto vetro iOS.
+/// Tre layer sovrapposti: blur material + velo bianco + bordo rim.
+private struct BarCircle<Content: View>: View {
+    var tint: Color = .clear
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .frame(width: Metrics.circleSize, height: Metrics.circleSize)
+            .barGlass(Circle(), tint: tint == .clear ? nil : tint)
+    }
+}
+
+/// Cerchio con didascalia sotto: in colonna il valore che in orizzontale
+/// stava a fianco dell'icona (percentuale, temperatura) va a capo.
+private struct CaptionedCircle<Badge: View, Caption: View>: View {
+    @ViewBuilder let circle: () -> Badge
+    @ViewBuilder let caption: () -> Caption
+
+    var body: some View {
+        VStack(spacing: 4) {
+            circle()
+            caption()
+                .font(Metrics.caption)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct WiFiCircleWidget: View {
+    let signalLevel: Int
+
+    var body: some View {
+        BarCircle {
+            WiFiSignalIcon(signalLevel: signalLevel)
+                .frame(width: 18, height: 18)
+        }
+    }
+}
+
+/// Batteria nel contenitore del design system: icona col livello (colorata
+/// per stato) e sotto la percentuale, col fulmine quando è in carica.
+private struct BatteryWidget: View {
+    @ObservedObject var model: BatteryModel
+    @State private var animLevel: CGFloat = 0
+
+    var body: some View {
+        BarContainer(spacing: BarLayout.itemSpacing) {
+            BatteryLevelIcon(level: animLevel, accent: statusColor)
+                .frame(width: BarLayout.iconSize, height: BarLayout.iconSize)
+
+            HStack(spacing: 2) {
+                Text("\(model.percentage)")
+                    .barText(.body)
+                if model.isCharging {
+                    ChargingBoltIcon(accent: statusColor)
+                        .frame(width: BarLayout.accessoryIconSize, height: BarLayout.accessoryIconSize)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            model.isCharging
+                ? "Batteria \(model.percentage) percento, in carica"
+                : "Batteria \(model.percentage) percento"
+        )
+        .onAppear {
+            animLevel = CGFloat(model.percentage) / 100
+            if model.isCharging { startChargingAnimation() }
+        }
+        .onChange(of: model.isCharging) { _, isCharging in
+            isCharging ? startChargingAnimation() : stopChargingAnimation()
+        }
+        .onChange(of: model.percentage) { _, _ in
+            if !model.isCharging {
+                withAnimation(.easeInOut(duration: 0.65)) {
+                    animLevel = CGFloat(model.percentage) / 100
+                }
+            }
+        }
+    }
+
+    private func startChargingAnimation() {
+        withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+            animLevel = 1.0
+        }
+    }
+
+    private func stopChargingAnimation() {
+        withAnimation(.easeInOut(duration: 0.65)) {
+            animLevel = CGFloat(model.percentage) / 100
+        }
+    }
+
+    private var statusColor: Color {
+        switch model.percentage {
+        case ..<20: return BarTheme.Status.critical
+        case ...75: return BarTheme.Status.warning
+        default: return BarTheme.Status.good
+        }
+    }
+}
+
+/// In colonna non c'è spazio per allargare la capsula all'hover: la
+/// temperatura sta fissa sotto il cerchio e la città nel tooltip.
+private struct WeatherCircleWidget: View {
+    @ObservedObject var model: WeatherStatusModel
+
+    var body: some View {
+        CaptionedCircle {
+            BarCircle(tint: conditionColor) {
+                Image(systemName: symbolName)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .frame(width: 18, height: 18)
+            }
+        } caption: {
+            Text(temperatureLabel)
+                .foregroundStyle(.white.opacity(0.88))
+        }
+        .help(model.city == "--" ? temperatureLabel : "\(temperatureLabel) \(model.city)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Meteo, \(temperatureLabel), \(model.city)")
+    }
+
+    private var temperatureLabel: String {
+        model.temperature.map { "\(Int($0.rounded()))°" } ?? "--°"
+    }
+
+    private var symbolName: String {
+        switch model.icon {
+        case "sunny": return "sun.max"
+        case "partly_cloudy_day": return "cloud.sun"
+        case "bedtime": return "moon.stars"
+        case "partly_cloudy_night": return "cloud.moon"
+        case "rainy", "weather_mix": return "cloud.rain"
+        case "weather_snowy", "cloudy_snowing": return "cloud.snow"
+        case "foggy": return "cloud.fog"
+        case "thunderstorm": return "cloud.bolt.rain"
+        default: return "cloud"
+        }
+    }
+
+    private var conditionColor: Color {
+        switch model.icon {
+        case "sunny": return Color(red: 1.00, green: 0.80, blue: 0.30)
+        case "partly_cloudy_day": return Color(red: 1.00, green: 0.82, blue: 0.40)
+        case "bedtime", "partly_cloudy_night": return Color(red: 0.72, green: 0.76, blue: 1.00)
+        case "rainy", "weather_mix": return Color(red: 0.50, green: 0.87, blue: 1.00)
+        case "weather_snowy", "cloudy_snowing": return Color(red: 0.73, green: 0.92, blue: 1.00)
+        case "thunderstorm": return Color(red: 0.75, green: 0.57, blue: 1.00)
+        default: return Color(white: 0.40)
+        }
+    }
+}
+
+/// Orologio in cima alla colonna: ore e minuti impilati in stile display,
+/// sotto giorno della settimana, numero, mese e anno in stile body.
+private struct ClockWidget: View {
+    @ObservedObject var model: DateTimeModel
+
+    var body: some View {
+        BarContainer {
+            Text(model.hour).barText(.display)
+            Text(model.minute).barText(.display)
+
+            BarDivider()
+
+            Text(model.weekday).barText(.body)
+            Text(model.day).barText(.body)
+            Text(model.month).barText(.body)
+            Text(model.year).barText(.body)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(model.hour):\(model.minute), \(model.weekday) \(model.day) \(model.month) \(model.year)")
     }
 }
 
@@ -1190,46 +1352,6 @@ private struct ChargingBoltIcon: View {
             context.fill(bolt, with: .color(accent.opacity(0.82)))
             context.stroke(bolt, with: .color(accent), style: stroke)
         }
-    }
-}
-
-private struct BatteryWidget: View {
-    @ObservedObject var model: BatteryModel
-
-    private var statusColor: Color {
-        switch model.percentage {
-        case ..<20: return Color(red: 0.95, green: 0.55, blue: 0.66)
-        case ...75: return Color(red: 0.98, green: 0.89, blue: 0.69)
-        default: return Color(red: 0.65, green: 0.89, blue: 0.63)
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: Metrics.batteryBoltSpacing) {
-            BatteryLevelIcon(
-                level: CGFloat(model.percentage) / 100,
-                accent: statusColor
-            )
-                .frame(width: 24, height: 24)
-
-            Text("\(model.percentage)")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(statusColor)
-
-            if model.isCharging {
-                ChargingBoltIcon(accent: statusColor)
-                    .frame(width: Metrics.chargingBoltWidth, height: Metrics.chargingBoltWidth)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .animation(.easeInOut(duration: 0.65), value: model.percentage)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            model.isCharging
-                ? "Batteria \(model.percentage) percento, in carica"
-                : "Batteria \(model.percentage) percento"
-        )
     }
 }
 
@@ -1542,9 +1664,6 @@ private struct BatteryBarView: View {
     @ObservedObject var weatherModel: WeatherStatusModel
     @ObservedObject var healthModel: HealthStatusModel
     @ObservedObject var voiceCaptureModel: VoiceCaptureModel
-    /// Lo schermo che ospita questa copia della barra ha il notch: solo lì
-    /// serve lo sfondo vetrato che ne maschera i lati.
-    let hasNotch: Bool
     let onComputeClick: () -> Void
     let onWiFiClick: () -> Void
     let onCalendarClick: () -> Void
@@ -1553,146 +1672,63 @@ private struct BatteryBarView: View {
     let onWorkoutsClick: () -> Void
     let onVoiceCaptureClick: () -> Void
 
+    /// Colonna sul bordo destro: in alto l'orologio e le informazioni della
+    /// giornata (agenda, salute, allenamenti, nota vocale), in fondo lo stato
+    /// del sistema. Lo Spacer in mezzo tiene i due gruppi ai capi opposti,
+    /// così lo sguardo trova l'ora sempre nello stesso angolo.
     var body: some View {
-        VStack(spacing: 0) {
-            bar
-                .padding(8)
-                .frame(height: Metrics.barContentHeight)
-                .background {
-                    if hasNotch {
-                        ZStack {
-                            GlassBackground()
-                            Color.black.opacity(0.18)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: Metrics.outerRadius, style: .continuous))
-                    }
-                }
+        VStack(spacing: Metrics.sectionSpacing) {
+            ClockWidget(model: dateTimeModel)
 
-            Spacer(minLength: 0)
-        }
-        // Senza notch il centro della barra è libero: l'orologio ci si
-        // installa dentro la pillola arancione invece di restare in coda.
-        // L'overlay copre anche il gutter, così i margini sopra e sotto la
-        // pillola sono quelli che separano le finestre dal bordo dello schermo.
-        .overlay {
-            if !hasNotch {
-                dateTimePill
+            Button(action: onCalendarClick) {
+                CalendarStatusWidget(model: calendarModel)
             }
-        }
-    }
+            .buttonStyle(.plain)
 
-    /// Data a sinistra (giorno, mese, numero e sotto l'anno) e ora digitale a
-    /// destra, dentro la pillola arancione che sostituisce l'orologio in coda.
-    private var dateTimePill: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: -1) {
-                Text(dateTimeModel.dayLine)
-                    .font(Metrics.inter(13, "Medium"))
-                Text(dateTimeModel.year)
-                    .font(Metrics.inter(13, "Medium"))
-                    .opacity(0.85)
+            if calendarModel.hasMeetingLink {
+                CalendarJoinButton(model: calendarModel, action: onCalendarJoinClick)
             }
 
-            Text(dateTimeModel.time)
-                .font(Metrics.inter(20, "SemiBold"))
-                .monospacedDigit()
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, Metrics.dateTimePillHorizontalPadding)
-        .frame(height: Metrics.dateTimePillHeight)
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.dateTimePillRadius, style: .continuous)
-                .fill(Metrics.dateTimePillColor)
-                // Ombra sfalsata a destra: l'altezza del pannello lascia poco
-                // margine sotto, quindi il grosso dello scostamento va in x.
-                .shadow(color: .black.opacity(0.28), radius: 5, x: 4, y: 1)
-        )
-        .allowsHitTesting(false)
-    }
+            HealthStatusWidget(model: healthModel)
 
-    private var dateTimeLabel: some View {
-        Text(dateTimeModel.text)
-            .font(.system(size: 14, weight: .medium, design: .rounded))
-            .monospacedDigit()
-            .foregroundStyle(Color(red: 0.79, green: 0.77, blue: 0.81))
-    }
+            Button(action: onWorkoutsClick) {
+                WeeklyWorkoutsIcon(count: healthModel.weeklyWorkoutCount)
+            }
+            .buttonStyle(.plain)
 
-    private var bar: some View {
-        HStack(spacing: 0) {
-            // Gruppo di sinistra: calendario e salute aderiscono al contenuto,
-            // così le metriche restano a fianco del testo dell'evento invece di
-            // essere spinte al centro da un frame elastico.
-            HStack(spacing: 0) {
-                Button(action: onCalendarClick) {
-                    CalendarStatusWidget(model: calendarModel)
-                }
-                .buttonStyle(.plain)
-
-                if calendarModel.hasMeetingLink {
-                    Spacer().frame(width: Metrics.calendarJoinSpacing)
-                    CalendarJoinButton(model: calendarModel, action: onCalendarJoinClick)
-                }
-
-                Spacer().frame(width: Metrics.calendarHealthSpacing)
-
-                HealthStatusWidget(model: healthModel)
-                    .frame(width: Metrics.healthWidth)
-
-                Spacer().frame(width: Metrics.healthWorkoutsSpacing)
-
-                Button(action: onWorkoutsClick) {
-                    WeeklyWorkoutsIcon(count: healthModel.weeklyWorkoutCount)
-                }
-                .buttonStyle(.plain)
-
-                Spacer().frame(width: Metrics.workoutsVoiceSpacing)
-
-                Button(action: onVoiceCaptureClick) {
+            Button(action: onVoiceCaptureClick) {
+                BarCircle {
                     VoiceCaptureIcon(state: voiceCaptureModel.state)
                 }
-                .buttonStyle(.plain)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-
-            Spacer(minLength: 24)
-
-            Button(action: onComputeClick) {
-                ComputeIcon()
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            Spacer().frame(width: Metrics.computeWiFiSpacing)
-
-            Button(action: onWiFiClick) {
-                WiFiSignalIcon(signalLevel: wifiModel.signalLevel)
-                    .frame(width: Metrics.iconWidth, height: Metrics.iconWidth)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Spacer().frame(width: Metrics.wifiBatterySpacing)
-
-            BatteryWidget(model: batteryModel)
-                .frame(width: Metrics.batteryWidth(isCharging: batteryModel.isCharging))
-
-            Spacer().frame(width: Metrics.batteryWeatherSpacing)
+            Spacer(minLength: Metrics.sectionSpacing)
 
             Button(action: onWeatherClick) {
-                WeatherStatusWidget(model: weatherModel)
-                    .frame(width: Metrics.weatherWidth)
+                WeatherCircleWidget(model: weatherModel)
             }
             .buttonStyle(.plain)
 
-            if hasNotch {
-                Spacer().frame(width: Metrics.weatherDateSpacing)
+            BatteryWidget(model: batteryModel)
 
-                dateTimeLabel
-                    .frame(width: Metrics.dateTimeWidth, alignment: .center)
+            Button(action: onWiFiClick) {
+                WiFiCircleWidget(signalLevel: wifiModel.signalLevel)
             }
+            .buttonStyle(.plain)
+
+            Button(action: onComputeClick) {
+                BarCircle {
+                    ComputeIcon()
+                        .frame(width: 18, height: 18)
+                }
+            }
+            .buttonStyle(.plain)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.vertical, Metrics.windowGap)
+        .frame(width: Metrics.sidebarWidth)
+        .frame(maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.25), value: calendarModel.hasMeetingLink)
     }
 }
 
@@ -1708,12 +1744,12 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     /// Un pannello per schermo, indicizzato sul display ID: la barra deve
     /// comparire su tutti i monitor, non solo su quello col notch.
     private var panels: [CGDirectDisplayID: NSPanel] = [:]
-    /// Stato del notch con cui ogni pannello è stato costruito: se cambia
-    /// (display sostituito sullo stesso ID) il pannello va rifatto.
-    private var panelNotchState: [CGDirectDisplayID: Bool] = [:]
     /// Barra su cui è avvenuto l'ultimo click: i popup si ancorano a quella,
     /// così si aprono sullo schermo con cui l'utente sta interagendo.
     private weak var activeBarPanel: NSPanel?
+    /// Altezza del puntatore all'ultimo click sulla colonna: i popup si
+    /// aprono alla sua sinistra, allineati al widget che li ha richiesti.
+    private var popupAnchorY: CGFloat?
     private var computePanel: NSPanel?
     private var workoutsPanel: NSPanel?
     private var outsideClickMonitor: Any?
@@ -1832,15 +1868,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
 
     private func positionComputePopup() {
         guard let panel = anchorPanel, let computePanel else { return }
-        let gap: CGFloat = 6
-        let anchorRight = panel.frame.maxX - Metrics.computeIconRightInset(isCharging: batteryModel.isCharging, hasNotch: anchorHasNotch(panel))
-        let frame = NSRect(
-            x: anchorRight - computePanel.frame.width,
-            y: barBottomY(of: panel) - computePanel.frame.height - gap,
-            width: computePanel.frame.width,
-            height: computePanel.frame.height
-        )
-        computePanel.setFrame(frame, display: true)
+        computePanel.setFrame(popupFrame(size: computePanel.frame.size, beside: panel), display: true)
     }
 
     private func toggleWorkoutsPopup() {
@@ -1879,17 +1907,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
 
     private func positionWorkoutsPopup() {
         guard let panel = anchorPanel, let workoutsPanel else { return }
-        let gap: CGFloat = 6
-        // La card degli allenamenti è nel cluster di sinistra: la ancoriamo al
-        // bordo sinistro della barra, così non deve inseguire la larghezza
-        // variabile del calendario.
-        let frame = NSRect(
-            x: panel.frame.minX + 8,
-            y: barBottomY(of: panel) - workoutsPanel.frame.height - gap,
-            width: workoutsPanel.frame.width,
-            height: workoutsPanel.frame.height
-        )
-        workoutsPanel.setFrame(frame, display: true)
+        workoutsPanel.setFrame(popupFrame(size: workoutsPanel.frame.size, beside: panel), display: true)
     }
 
     private func toggleWiFiPopup() {
@@ -1899,8 +1917,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         sendCalendarPopupCommand("hide")
         hideWeatherPopup()
         guard let panel = anchorPanel else { return }
-        let anchorRight = panel.frame.maxX - Metrics.wifiIconRightInset(isCharging: batteryModel.isCharging, hasNotch: anchorHasNotch(panel))
-        sendNetworkPopupCommand("toggle \(anchorRight) \(barBottomY(of: panel))")
+        sendNetworkPopupCommand("toggle \(popupRightEdge(of: panel)) \(popupTop(in: panel))")
     }
 
     /// Apre il link alla videochiamata dell'evento in primo piano. Chiude prima
@@ -1918,9 +1935,9 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         sendNetworkPopupCommand("hide")
         hideWeatherPopup()
         guard let panel = anchorPanel else { return }
-        // Il calendario è il widget più a sinistra: l'ancora è l'angolo in
-        // basso a sinistra della barra che ha ricevuto il click.
-        sendCalendarPopupCommand("toggle \(panel.frame.minX) \(barBottomY(of: panel))")
+        // Bordo destro e bordo superiore del popup: calendar_notch lo tiene
+        // dentro lo schermo se l'agenda è più alta dello spazio disponibile.
+        sendCalendarPopupCommand("toggle \(popupRightEdge(of: panel)) \(popupTop(in: panel))")
     }
 
     private func toggleWeatherPopup() {
@@ -1931,14 +1948,13 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         sendCalendarPopupCommand("hide")
 
         guard let panel = anchorPanel else { return }
-        let anchorRight = panel.frame.maxX - Metrics.weatherRightInset(hasNotch: anchorHasNotch(panel))
         let scriptURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/sketchybar/plugins/weather_popup_toggle.sh")
         let process = Process()
         process.executableURL = scriptURL
         var environment = ProcessInfo.processInfo.environment
-        environment["WEATHER_POPUP_ANCHOR_X"] = "\(anchorRight)"
-        environment["WEATHER_POPUP_ANCHOR_Y"] = "\(barBottomY(of: panel))"
+        environment["WEATHER_POPUP_ANCHOR_X"] = "\(popupRightEdge(of: panel))"
+        environment["WEATHER_POPUP_ANCHOR_Y"] = "\(popupTop(in: panel))"
         process.environment = environment
         process.standardOutput = Pipe()
         process.standardError = Pipe()
@@ -2015,25 +2031,34 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func hasNotch(_ screen: NSScreen?) -> Bool {
-        (screen?.safeAreaInsets.top ?? 0) > 0
+    /// I popup si aprono a sinistra della colonna: questo è il loro bordo
+    /// destro, per quelli ancorati in processi separati (rete, meteo, agenda).
+    private func popupRightEdge(of panel: NSPanel) -> CGFloat {
+        panel.frame.minX - Metrics.popupGap
     }
 
-    /// Il notch dello schermo a cui è ancorato il popup: senza notch le icone
-    /// di destra sono più a destra, perché l'orologio è passato al centro.
-    /// Il bordo inferiore della striscia visibile: il pannello scende più in
-    /// basso per includere il gutter, ma i popup vanno appesi alla barra.
-    private func barBottomY(of panel: NSPanel) -> CGFloat {
-        panel.frame.maxY - Metrics.barContentHeight
+    /// Bordo superiore desiderato per un popup: poco sopra al click, così la
+    /// card parte all'altezza del widget. Chi conosce l'altezza del proprio
+    /// popup la usa per restare dentro lo schermo (`popupFrame`).
+    private func popupTop(in panel: NSPanel) -> CGFloat {
+        let pointerY = popupAnchorY ?? panel.frame.maxY
+        return min(pointerY + Metrics.popupAnchorLift, panel.frame.maxY - Metrics.windowGap)
     }
 
-    private func anchorHasNotch(_ panel: NSPanel) -> Bool {
-        Self.hasNotch(panel.screen ?? NSScreen.screens.first { $0.frame.intersects(panel.frame) })
+    private func popupFrame(size: NSSize, beside panel: NSPanel) -> NSRect {
+        let bottomLimit = panel.frame.minY + Metrics.windowGap
+        let top = max(popupTop(in: panel), bottomLimit + size.height)
+        return NSRect(
+            x: popupRightEdge(of: panel) - size.width,
+            y: top - size.height,
+            width: size.width,
+            height: size.height
+        )
     }
 
-    private func makeBarPanel(hasNotch: Bool) -> NSPanel {
+    private func makeBarPanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: Metrics.panelSize),
+            contentRect: barFrame(for: NSScreen.main ?? NSScreen.screens[0]),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -2056,7 +2081,6 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
                 weatherModel: weatherModel,
                 healthModel: healthModel,
                 voiceCaptureModel: voiceCaptureModel,
-                hasNotch: hasNotch,
                 onComputeClick: { [weak self] in self?.toggleComputePopup() },
                 onWiFiClick: { [weak self] in self?.toggleWiFiPopup() },
                 onCalendarClick: { [weak self] in self?.toggleCalendarPopup() },
@@ -2074,35 +2098,29 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
     /// dopo lo scollegamento di un display.
     private func rebuildPanels() {
         var live: [CGDirectDisplayID: NSPanel] = [:]
-        var liveNotch: [CGDirectDisplayID: Bool] = [:]
         for screen in NSScreen.screens {
             guard let id = displayID(of: screen) else { continue }
-            let hasNotch = Self.hasNotch(screen)
-            let reusable = panelNotchState[id] == hasNotch ? panels[id] : nil
-            if let stale = panels[id], stale !== reusable {
-                if activeBarPanel === stale { activeBarPanel = nil }
-                stale.orderOut(nil)
-            }
-            let panel = reusable ?? makeBarPanel(hasNotch: hasNotch)
+            let panel = panels[id] ?? makeBarPanel()
             panel.setFrame(barFrame(for: screen), display: true)
             panel.orderFrontRegardless()
             live[id] = panel
-            liveNotch[id] = hasNotch
         }
         for (id, panel) in panels where live[id] == nil {
             if activeBarPanel === panel { activeBarPanel = nil }
             panel.orderOut(nil)
         }
         panels = live
-        panelNotchState = liveNotch
     }
 
+    /// Colonna a tutta altezza aderente al bordo destro. Lo schermo intero e
+    /// non il `visibleFrame`: menu bar e Dock sono nascosti, e la colonna
+    /// deve restare ferma quando compaiono.
     private func barFrame(for screen: NSScreen) -> NSRect {
         NSRect(
-            x: screen.frame.minX,
-            y: screen.frame.maxY - Metrics.panelSize.height - Metrics.topMargin,
-            width: screen.frame.width,
-            height: Metrics.panelSize.height
+            x: screen.frame.maxX - Metrics.sidebarWidth,
+            y: screen.frame.minY,
+            width: Metrics.sidebarWidth,
+            height: screen.frame.height
         )
     }
 
@@ -2126,6 +2144,7 @@ private final class BatteryBarApp: NSObject, NSApplicationDelegate {
         let pointer = NSEvent.mouseLocation
         if let panel = panels.values.first(where: { $0.frame.contains(pointer) }) {
             activeBarPanel = panel
+            popupAnchorY = pointer.y
         }
     }
 }
