@@ -2990,12 +2990,16 @@ final class NotchPresentationState: ObservableObject {
 struct CalendarNotchView: View {
     @ObservedObject var model: CalendarModel
     @ObservedObject var presentation: NotchPresentationState
-    let onHoverChanged: (Bool) -> Void
     let onOpenSettings: (String?) -> Void
 
     @State private var weekOffset = 0
     @State private var weekNavigationDirection = 1
     @State private var expandedEventID: String?
+    @AppStorage("calendar_notch_view_mode") private var viewModeRaw = CalendarViewMode.timeline.rawValue
+
+    private var viewMode: CalendarViewMode {
+        CalendarViewMode(rawValue: viewModeRaw) ?? .timeline
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -3021,7 +3025,6 @@ struct CalendarNotchView: View {
                 style: .continuous
             )
         )
-        .onHover(perform: onHoverChanged)
         .onChange(of: model.displayedDate) {
             expandedEventID = nil
         }
@@ -3037,6 +3040,7 @@ struct CalendarNotchView: View {
                 .padding(.horizontal, 22)
 
             eventContent
+                .frame(maxHeight: .infinity)
         }
         .padding(.bottom, 18)
     }
@@ -3068,6 +3072,8 @@ struct CalendarNotchView: View {
                     .accessibilityLabel("Vai a oggi")
 
                     Spacer()
+                    viewModePicker
+
                     Button { onOpenSettings(nil) } label: {
                         Image(systemName: "gearshape")
                             .font(.custom("Google Sans Flex 18pt", size: 10))
@@ -3112,6 +3118,44 @@ struct CalendarNotchView: View {
             }
             .padding(.horizontal, 12)
         }
+    }
+
+    /// Interruttore fra la griglia oraria (default) e l'elenco eventi.
+    /// Mostra entrambe le icone con quella attiva evidenziata, così si capisce
+    /// in che vista si è senza doverla dedurre dal contenuto.
+    private var viewModePicker: some View {
+        HStack(spacing: 2) {
+            viewModeButton(.timeline, systemName: "calendar.day.timeline.left", label: "Vista a calendario")
+            viewModeButton(.agenda, systemName: "list.bullet", label: "Vista elenco")
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.white.opacity(0.07)))
+    }
+
+    private func viewModeButton(_ mode: CalendarViewMode, systemName: String, label: String) -> some View {
+        let isSelected = viewMode == mode
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                expandedEventID = nil
+                viewModeRaw = mode.rawValue
+            }
+        } label: {
+            Image(systemName: systemName)
+                .font(.custom("Google Sans Flex 18pt", size: 10))
+                .fontWeight(.semibold)
+                .foregroundStyle(isSelected ? primaryText : subtleText)
+                .frame(width: 24, height: 18)
+                .background {
+                    if isSelected {
+                        Capsule().fill(Color.white.opacity(0.14))
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var weekDays: some View {
@@ -3207,29 +3251,116 @@ struct CalendarNotchView: View {
                 stateView(icon: "calendar.badge.checkmark", title: emptyStateTitle, message: emptyStateMessage) {
                     EmptyView()
                 }
+            } else if viewMode == .timeline {
+                timelineContent
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 9) {
-                        ForEach(model.events) { event in
-                            EventRow(
-                                event: event,
-                                rsvpState: model.rsvpStates[event.id] ?? .idle,
-                                isExpanded: expandedEventID == event.id,
-                                onToggle: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        expandedEventID = expandedEventID == event.id ? nil : event.id
-                                    }
-                                },
-                                onRespond: { model.respond(to: event, with: $0) },
-                                onOpenSettings: onOpenSettings,
-                                onOpenCalendar: { model.openInCalendar(event) }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .frame(maxHeight: 244)
+                agendaContent
             }
+        }
+    }
+
+    private var timelineContent: some View {
+        VStack(spacing: 8) {
+            if !allDayEvents.isEmpty {
+                allDayStrip
+            }
+
+            DayTimelineView(
+                events: model.events,
+                day: model.displayedDate,
+                now: model.now,
+                selectedEventID: expandedEventID,
+                onSelect: { toggleSelection(of: $0) },
+                onDismissSelection: {
+                    guard expandedEventID != nil else { return }
+                    withAnimation(.easeInOut(duration: 0.18)) { expandedEventID = nil }
+                }
+            )
+            .frame(maxHeight: .infinity)
+        }
+        .padding(.horizontal, 14)
+        .overlay(alignment: .bottom) {
+            if let event = selectedEvent {
+                TimelineEventDetailCard(
+                    event: event,
+                    rsvpState: model.rsvpStates[event.id] ?? .idle,
+                    onClose: {
+                        withAnimation(.easeInOut(duration: 0.18)) { expandedEventID = nil }
+                    },
+                    onRespond: { model.respond(to: event, with: $0) },
+                    onOpenSettings: onOpenSettings,
+                    onOpenCalendar: { model.openInCalendar(event) }
+                )
+                .padding(.horizontal, 14)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Gli eventi "tutto il giorno" non hanno una posizione nella griglia
+    /// oraria: restano in cima come pill, sopra la timeline.
+    private var allDayStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(allDayEvents) { event in
+                    let tint = timelineTint(event.calendarColor)
+                    Button { toggleSelection(of: event) } label: {
+                        HStack(spacing: 5) {
+                            Circle().fill(tint).frame(width: 6, height: 6)
+                            Text(event.title).lineLimit(1)
+                        }
+                        .font(.custom("Google Sans Flex 18pt", size: 10))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(primaryText)
+                        .padding(.horizontal, 9)
+                        .frame(height: 22)
+                        .background(Capsule().fill(tint.opacity(expandedEventID == event.id ? 0.3 : 0.16)))
+                        .overlay(Capsule().strokeBorder(tint.opacity(expandedEventID == event.id ? 0.9 : 0.3), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .frame(height: 24)
+    }
+
+    private var agendaContent: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 9) {
+                ForEach(model.events) { event in
+                    EventRow(
+                        event: event,
+                        rsvpState: model.rsvpStates[event.id] ?? .idle,
+                        isExpanded: expandedEventID == event.id,
+                        onToggle: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                expandedEventID = expandedEventID == event.id ? nil : event.id
+                            }
+                        },
+                        onRespond: { model.respond(to: event, with: $0) },
+                        onOpenSettings: onOpenSettings,
+                        onOpenCalendar: { model.openInCalendar(event) }
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var allDayEvents: [CalendarEventViewModel] {
+        model.events.filter(\.isAllDay)
+    }
+
+    private var selectedEvent: CalendarEventViewModel? {
+        guard let expandedEventID else { return nil }
+        return model.events.first { $0.id == expandedEventID }
+    }
+
+    private func toggleSelection(of event: CalendarEventViewModel) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            expandedEventID = expandedEventID == event.id ? nil : event.id
         }
     }
 
@@ -3249,7 +3380,7 @@ struct CalendarNotchView: View {
                 .multilineTextAlignment(.center)
             action()
         }
-        .frame(maxWidth: .infinity, minHeight: 150)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
     }
 
@@ -3288,6 +3419,11 @@ struct CalendarNotchView: View {
 
 struct AttendeeAvatarStack: View {
     let attendees: [CalendarAttendeeViewModel]
+    /// Nella timeline i blocchi sono alti quanto la durata dell'evento: gli
+    /// avatar devono poter rimpicciolire per starci dentro.
+    var diameter: CGFloat = 28
+
+    private var step: CGFloat { (diameter * 4 / 7).rounded() }
 
     private var visibleAttendees: [CalendarAttendeeViewModel] {
         Array(attendees.prefix(attendees.count > 3 ? 2 : 3))
@@ -3297,7 +3433,7 @@ struct AttendeeAvatarStack: View {
         ZStack(alignment: .leading) {
             ForEach(Array(visibleAttendees.enumerated()), id: \.element.id) { index, attendee in
                 avatar(for: attendee)
-                    .offset(x: CGFloat(index) * 16)
+                    .offset(x: CGFloat(index) * step)
                     .zIndex(Double(visibleAttendees.count - index))
             }
 
@@ -3306,16 +3442,16 @@ struct AttendeeAvatarStack: View {
                     .fill(surfaceHover)
                     .overlay {
                         Text("+\(attendees.count - visibleAttendees.count)")
-                            .font(.custom("Google Sans Flex 18pt", size: 9))
+                            .font(.custom("Google Sans Flex 18pt", size: max(8, (diameter * 0.32).rounded())))
                             .fontWeight(.bold)
                             .foregroundStyle(secondaryText)
                     }
                     .overlay { Circle().stroke(panelBlack, lineWidth: 2) }
-                    .frame(width: 28, height: 28)
-                    .offset(x: CGFloat(visibleAttendees.count) * 16)
+                    .frame(width: diameter, height: diameter)
+                    .offset(x: CGFloat(visibleAttendees.count) * step)
             }
         }
-        .frame(width: 58, height: 32, alignment: .leading)
+        .frame(width: step * 2 + diameter - 2, height: diameter + 4, alignment: .leading)
     }
 
     @ViewBuilder
@@ -3324,7 +3460,7 @@ struct AttendeeAvatarStack: View {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
-                .frame(width: 28, height: 28)
+                .frame(width: diameter, height: diameter)
                 .clipShape(Circle())
                 .overlay { Circle().stroke(panelBlack, lineWidth: 2) }
         } else {
@@ -3332,12 +3468,12 @@ struct AttendeeAvatarStack: View {
                 .fill(surfaceHover)
                 .overlay {
                     Text(attendee.initials)
-                        .font(.custom("Google Sans Flex 18pt", size: 9))
+                        .font(.custom("Google Sans Flex 18pt", size: max(8, (diameter * 0.32).rounded())))
                         .fontWeight(.bold)
                         .foregroundStyle(primaryText)
                 }
                 .overlay { Circle().stroke(panelBlack, lineWidth: 2) }
-                .frame(width: 28, height: 28)
+                .frame(width: diameter, height: diameter)
         }
     }
 }
@@ -3430,109 +3566,486 @@ struct CalendarEventIcon: View {
     }
 }
 
-struct EventRow: View {
+// MARK: - Vista a calendario (timeline giornaliera)
+
+/// Rende leggibile su fondo nero il colore del calendario: taglia la
+/// saturazione e alza la luminosità, così anche i calendari molto scuri
+/// restano distinguibili fra loro senza sbiadire.
+private func timelineTint(_ color: Color) -> Color {
+    guard let rgb = NSColor(color).usingColorSpace(.deviceRGB) else { return color }
+    var hue: CGFloat = 0
+    var saturation: CGFloat = 0
+    var brightness: CGFloat = 0
+    var alpha: CGFloat = 0
+    rgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+    return Color(nsColor: NSColor(
+        hue: hue,
+        saturation: min(saturation, 0.62),
+        brightness: max(brightness, 0.88),
+        alpha: 1
+    ))
+}
+
+enum CalendarViewMode: String {
+    case timeline
+    case agenda
+}
+
+/// Posizione orizzontale di un evento nella griglia: gli eventi che si
+/// sovrappongono nel tempo vengono affiancati in colonne, come nelle app
+/// di calendario native.
+private struct TimelineSlot: Identifiable {
+    let event: CalendarEventViewModel
+    let column: Int
+    let columnCount: Int
+
+    var id: String { event.id }
+}
+
+/// Griglia oraria della giornata: ogni evento è un blocco alto in proporzione
+/// alla sua durata, così i buchi liberi si leggono a colpo d'occhio senza
+/// dover confrontare gli orari uno per uno.
+struct DayTimelineView: View {
+    let events: [CalendarEventViewModel]
+    let day: Date
+    let now: Date
+    let selectedEventID: String?
+    let onSelect: (CalendarEventViewModel) -> Void
+    let onDismissSelection: () -> Void
+
+    private let hourHeight: CGFloat = 58
+    private let gutterWidth: CGFloat = 42
+    private let laneGap: CGFloat = 8
+    private let minBlockHeight: CGFloat = 26
+    private let columnSpacing: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    ZStack(alignment: .topLeading) {
+                        // Toccare una fascia libera chiude la card di dettaglio:
+                        // sta sotto ai blocchi, che restano cliccabili.
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: onDismissSelection)
+
+                        hourGrid
+                        ForEach(slots) { slot in
+                            block(for: slot, availableWidth: geometry.size.width)
+                        }
+                        if isToday {
+                            nowIndicator
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: gridHeight, alignment: .topLeading)
+                    .padding(.bottom, 12)
+                }
+                .onAppear { scrollToFocus(proxy) }
+                .onChange(of: day) { scrollToFocus(proxy) }
+                .onChange(of: events.map(\.id)) { scrollToFocus(proxy) }
+            }
+        }
+    }
+
+    private var hourGrid: some View {
+        VStack(spacing: 0) {
+            ForEach(hourBounds.start...hourBounds.end, id: \.self) { hour in
+                ZStack(alignment: .top) {
+                    Color.clear
+
+                    HStack(spacing: laneGap) {
+                        Text(hourLabel(hour))
+                            .font(.custom("Google Sans Flex 18pt", size: 10))
+                            .fontWeight(.medium)
+                            .foregroundStyle(subtleText)
+                            .frame(width: gutterWidth, alignment: .trailing)
+
+                        Rectangle()
+                            .fill(Color.white.opacity(0.07))
+                            .frame(height: 1)
+                    }
+                    .frame(height: 13)
+                    .offset(y: -6.5)
+                }
+                .frame(height: hourHeight)
+                .id("hour-\(hour)")
+            }
+        }
+    }
+
+    private func block(for slot: TimelineSlot, availableWidth: CGFloat) -> some View {
+        let laneWidth = max(availableWidth - gutterWidth - laneGap, 80)
+        let columnWidth = (laneWidth - columnSpacing * CGFloat(slot.columnCount - 1)) / CGFloat(slot.columnCount)
+        let top = y(for: slot.event.startDate)
+        let height = max(minBlockHeight, y(for: slot.event.endDate) - top)
+
+        return TimelineEventBlock(
+            event: slot.event,
+            height: height,
+            isSelected: selectedEventID == slot.event.id,
+            isPast: slot.event.endDate < now,
+            onTap: { onSelect(slot.event) }
+        )
+        .frame(width: columnWidth, height: height, alignment: .topLeading)
+        .offset(
+            x: gutterWidth + laneGap + CGFloat(slot.column) * (columnWidth + columnSpacing),
+            y: top
+        )
+        .zIndex(selectedEventID == slot.event.id ? 2 : 1)
+    }
+
+    private var nowIndicator: some View {
+        HStack(spacing: laneGap - 2) {
+            Text(now.formatted(date: .omitted, time: .shortened))
+                .font(.custom("Google Sans Flex 18pt", size: 9))
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(accent))
+                .frame(width: gutterWidth + 2, alignment: .trailing)
+
+            Rectangle()
+                .fill(accent)
+                .frame(height: 1.5)
+        }
+        .frame(height: 16)
+        .offset(y: y(for: now) - 8)
+        .zIndex(3)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: Geometria
+
+    private var dayStart: Date { Calendar.current.startOfDay(for: day) }
+
+    private var isToday: Bool { Calendar.current.isDate(day, inSameDayAs: now) }
+
+    private var timedEvents: [CalendarEventViewModel] {
+        events.filter { !$0.isAllDay }
+    }
+
+    private var gridHeight: CGFloat {
+        CGFloat(hourBounds.end - hourBounds.start + 1) * hourHeight
+    }
+
+    /// Fascia oraria da disegnare: parte dalla finestra "lavorativa" 8–19 e si
+    /// allarga quanto basta a contenere tutti gli eventi del giorno e l'ora
+    /// corrente, con un'ora di respiro sopra e sotto.
+    private var hourBounds: (start: Int, end: Int) {
+        var lower = 8
+        var upper = 19
+
+        for event in timedEvents {
+            let start = event.startDate.timeIntervalSince(dayStart) / 3600
+            let end = event.endDate.timeIntervalSince(dayStart) / 3600
+            lower = min(lower, max(0, Int(start.rounded(.down))))
+            upper = max(upper, min(24, Int(end.rounded(.up))))
+        }
+
+        if isToday {
+            let current = now.timeIntervalSince(dayStart) / 3600
+            lower = min(lower, max(0, Int(current.rounded(.down))))
+            upper = max(upper, min(24, Int(current.rounded(.down)) + 2))
+        }
+
+        return (max(0, lower - 1), min(24, max(upper + 1, lower + 5)))
+    }
+
+    private func y(for date: Date) -> CGFloat {
+        let hours = date.timeIntervalSince(dayStart) / 3600
+        let clamped = min(max(hours, Double(hourBounds.start)), Double(hourBounds.end))
+        return CGFloat(clamped - Double(hourBounds.start)) * hourHeight
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        guard let date = Calendar.current.date(byAdding: .hour, value: hour, to: dayStart) else { return "" }
+        return date.formatted(.dateTime.hour().minute())
+    }
+
+    /// Assegna le colonne un gruppo di sovrapposizioni alla volta: si accumulano
+    /// gli eventi finché ne arriva uno che inizia dopo la fine di tutti quelli
+    /// raccolti, poi si distribuiscono nella prima colonna libera.
+    private var slots: [TimelineSlot] {
+        let sorted = timedEvents.sorted { lhs, rhs in
+            if lhs.startDate != rhs.startDate { return lhs.startDate < rhs.startDate }
+            return lhs.endDate > rhs.endDate
+        }
+
+        var result: [TimelineSlot] = []
+        var cluster: [CalendarEventViewModel] = []
+        var clusterEnd = Date.distantPast
+
+        func flush() {
+            guard !cluster.isEmpty else { return }
+            var columnEnds: [Date] = []
+            var assignments: [(CalendarEventViewModel, Int)] = []
+
+            for event in cluster {
+                if let index = columnEnds.firstIndex(where: { $0 <= event.startDate }) {
+                    columnEnds[index] = event.endDate
+                    assignments.append((event, index))
+                } else {
+                    columnEnds.append(event.endDate)
+                    assignments.append((event, columnEnds.count - 1))
+                }
+            }
+
+            let columnCount = columnEnds.count
+            result.append(contentsOf: assignments.map {
+                TimelineSlot(event: $0.0, column: $0.1, columnCount: columnCount)
+            })
+            cluster = []
+            clusterEnd = .distantPast
+        }
+
+        for event in sorted {
+            if !cluster.isEmpty, event.startDate >= clusterEnd { flush() }
+            cluster.append(event)
+            clusterEnd = max(clusterEnd, event.endDate)
+        }
+        flush()
+        return result
+    }
+
+    private func scrollToFocus(_ proxy: ScrollViewProxy) {
+        let bounds = hourBounds
+        let reference: Date?
+        if isToday {
+            reference = now
+        } else {
+            reference = timedEvents.map(\.startDate).min()
+        }
+
+        let hour: Int
+        if let reference {
+            hour = Int((reference.timeIntervalSince(dayStart) / 3600).rounded(.down)) - 1
+        } else {
+            hour = 8
+        }
+
+        let target = min(max(hour, bounds.start), bounds.end)
+        let anchor = "hour-\(target)"
+        DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { proxy.scrollTo(anchor, anchor: .top) }
+    }
+}
+
+struct TimelineEventBlock: View {
+    let event: CalendarEventViewModel
+    let height: CGFloat
+    let isSelected: Bool
+    let isPast: Bool
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+
+    private var tint: Color { timelineTint(event.calendarColor) }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(tint)
+                    .frame(width: 3)
+                    .padding(.vertical, 4)
+                    .padding(.leading, 3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(event.title)
+                            .font(.custom("Google Sans Flex 18pt", size: 12))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(primaryText)
+                            .lineLimit(height >= 52 ? 2 : 1)
+
+                        Spacer(minLength: 2)
+
+                        Text(durationLabel)
+                            .font(.custom("Google Sans Flex 18pt", size: 9))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(tint)
+                            .fixedSize()
+                    }
+
+                    if height >= 44 {
+                        HStack(spacing: 4) {
+                            Text(timeLabel)
+                            if let location = displayLocation {
+                                Text("•")
+                                Text(location).lineLimit(1)
+                            }
+                        }
+                        .font(.custom("Google Sans Flex 18pt", size: 10))
+                        .fontWeight(.medium)
+                        .foregroundStyle(secondaryText)
+                    }
+
+                    if height >= 78, !event.attendees.isEmpty {
+                        AttendeeAvatarStack(attendees: event.attendees, diameter: 20)
+                            .padding(.top, 1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 7)
+                .padding(.trailing, 8)
+                .padding(.vertical, height >= 34 ? 5 : 2)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(tint.opacity(isSelected ? 0.34 : (isHovered ? 0.27 : 0.20)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(tint.opacity(isSelected ? 0.95 : 0.38), lineWidth: isSelected ? 1.5 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .opacity(isPast && !isSelected ? 0.42 : 1)
+        .onHover { isHovered = $0 }
+        .help("\(event.title) · \(timeLabel)")
+        .accessibilityLabel("\(event.title), \(timeLabel)")
+    }
+
+    private var timeLabel: String {
+        "\(event.startDate.formatted(date: .omitted, time: .shortened)) – \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var durationLabel: String {
+        let minutes = max(1, Int(event.endDate.timeIntervalSince(event.startDate) / 60))
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        return rest == 0 ? "\(hours)h" : "\(hours)h\(rest)"
+    }
+
+    private var displayLocation: String? {
+        event.meetingLink?.sourceField == "location" ? nil : event.location
+    }
+}
+
+/// Dettaglio dell'evento selezionato nella vista a calendario: sostituisce
+/// l'espansione in linea dell'agenda, che qui non avrebbe spazio perché
+/// l'altezza del blocco è vincolata alla durata.
+struct TimelineEventDetailCard: View {
     let event: CalendarEventViewModel
     let rsvpState: RSVPUpdateState
-    let isExpanded: Bool
-    let onToggle: () -> Void
+    let onClose: () -> Void
     let onRespond: (RSVPStatus) -> Void
     let onOpenSettings: (String?) -> Void
     let onOpenCalendar: () -> Void
 
-    @State private var isHovered = false
     @State private var isJoinHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
+                CalendarSourceIcon(color: event.calendarColor)
+                    .frame(width: 15, height: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(event.title)
+                        .font(.custom("Google Sans Flex 18pt", size: 14))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(primaryText)
+                        .lineLimit(1)
+
+                    HStack(spacing: 5) {
+                        Text(timeLabel)
+                        if let location = displayLocation {
+                            Text("•")
+                            Text(location).lineLimit(1)
+                        }
+                    }
+                    .font(.custom("Google Sans Flex 18pt", size: 11))
+                    .fontWeight(.medium)
+                    .foregroundStyle(secondaryText)
+                }
+
+                Spacer(minLength: 4)
+
+                if !event.attendees.isEmpty {
+                    AttendeeAvatarStack(attendees: event.attendees, diameter: 22)
+                }
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.custom("Google Sans Flex 18pt", size: 9))
+                        .fontWeight(.bold)
+                        .foregroundStyle(secondaryText)
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(0.07))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Chiudi dettagli")
+            }
+
+            if let meeting = event.meetingLink {
+                Button {
+                    NSWorkspace.shared.open(meeting.url)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "video.fill")
+                        Text("Partecipa con \(meeting.provider.rawValue)")
+                    }
+                    .font(.custom("Google Sans Flex 18pt", size: 11))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 30)
+                    .background(meeting.provider.brandColor.opacity(isJoinHovered ? 1 : 0.86))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .onHover { isJoinHovered = $0 }
+            }
+
+            Divider().overlay(Color.white.opacity(0.08))
+
+            EventParticipationView(
+                event: event,
+                rsvpState: rsvpState,
+                onRespond: onRespond,
+                onOpenSettings: onOpenSettings,
+                onOpenCalendar: onOpenCalendar
+            )
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(surface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.6), radius: 18, y: 8)
+    }
+
+    private var timeLabel: String {
+        if event.isAllDay { return "Tutto il giorno" }
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) – \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var displayLocation: String? {
+        event.meetingLink?.sourceField == "location" ? nil : event.location
+    }
+}
+
+/// Controlli di partecipazione (RSVP) condivisi fra la riga dell'agenda e la
+/// card di dettaglio della vista a calendario.
+struct EventParticipationView: View {
+    let event: CalendarEventViewModel
+    let rsvpState: RSVPUpdateState
+    let onRespond: (RSVPStatus) -> Void
+    let onOpenSettings: (String?) -> Void
+    let onOpenCalendar: () -> Void
+
     @State private var lastRequestedStatus: RSVPStatus?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button(action: onToggle) {
-                    HStack(spacing: 10) {
-                        CalendarSourceIcon(color: event.calendarColor)
-                            .frame(width: 15, height: 15)
-
-                        if event.attendees.isEmpty {
-                            CalendarEventIcon()
-                                .frame(width: 58, alignment: .leading)
-                        } else {
-                            AttendeeAvatarStack(attendees: event.attendees)
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(event.title)
-                                .font(.custom("Google Sans Flex 18pt", size: 14))
-                                .fontWeight(.semibold)
-                                .foregroundStyle(primaryText)
-                                .lineLimit(1)
-
-                            HStack(spacing: 5) {
-                                Text(eventTime)
-                                if let location = displayLocation {
-                                    Text("•")
-                                    Text(location).lineLimit(1)
-                                }
-                            }
-                            .font(.custom("Google Sans Flex 18pt", size: 11))
-                            .fontWeight(.medium)
-                            .foregroundStyle(secondaryText)
-                        }
-
-                        Spacer(minLength: 2)
-                        Image(systemName: "chevron.right")
-                            .font(.custom("Google Sans Flex 18pt", size: 10))
-                            .fontWeight(.semibold)
-                            .foregroundStyle(subtleText)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel(isExpanded ? "Chiudi dettagli di \(event.title)" : "Apri dettagli di \(event.title)")
-
-                if let meeting = event.meetingLink {
-                    Button {
-                        NSWorkspace.shared.open(meeting.url)
-                    } label: {
-                        Text("Partecipa")
-                            .font(.custom("Google Sans Flex 18pt", size: 11))
-                            .fontWeight(.semibold)
-                            .foregroundStyle(joinButtonForeground(for: meeting.provider))
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
-                            .background(joinButtonBackground(for: meeting.provider))
-                            .overlay(
-                                Capsule().strokeBorder(joinButtonBorder(for: meeting.provider), lineWidth: 1.4)
-                            )
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { isJoinHovered = $0 }
-                    .help("Partecipa con \(meeting.provider.rawValue)")
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-
-            if isExpanded {
-                Divider()
-                    .overlay(Color.white.opacity(0.08))
-                    .padding(.horizontal, 14)
-
-                participationContent
-                    .padding(.horizontal, 14)
-                    .padding(.top, 11)
-                    .padding(.bottom, 12)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(isHovered ? surfaceHover : surface)
-        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .opacity(event.hasEnded ? 0.5 : 1)
-        .onHover { isHovered = $0 }
-    }
-
-    private var participationContent: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Text("Partecipazione")
@@ -3662,6 +4175,114 @@ struct EventRow: View {
         default:
             return false
         }
+    }
+}
+
+struct EventRow: View {
+    let event: CalendarEventViewModel
+    let rsvpState: RSVPUpdateState
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    let onRespond: (RSVPStatus) -> Void
+    let onOpenSettings: (String?) -> Void
+    let onOpenCalendar: () -> Void
+
+    @State private var isHovered = false
+    @State private var isJoinHovered = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button(action: onToggle) {
+                    HStack(spacing: 10) {
+                        CalendarSourceIcon(color: event.calendarColor)
+                            .frame(width: 15, height: 15)
+
+                        if event.attendees.isEmpty {
+                            CalendarEventIcon()
+                                .frame(width: 58, alignment: .leading)
+                        } else {
+                            AttendeeAvatarStack(attendees: event.attendees)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(event.title)
+                                .font(.custom("Google Sans Flex 18pt", size: 14))
+                                .fontWeight(.semibold)
+                                .foregroundStyle(primaryText)
+                                .lineLimit(1)
+
+                            HStack(spacing: 5) {
+                                Text(eventTime)
+                                if let location = displayLocation {
+                                    Text("•")
+                                    Text(location).lineLimit(1)
+                                }
+                            }
+                            .font(.custom("Google Sans Flex 18pt", size: 11))
+                            .fontWeight(.medium)
+                            .foregroundStyle(secondaryText)
+                        }
+
+                        Spacer(minLength: 2)
+                        Image(systemName: "chevron.right")
+                            .font(.custom("Google Sans Flex 18pt", size: 10))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(subtleText)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(isExpanded ? "Chiudi dettagli di \(event.title)" : "Apri dettagli di \(event.title)")
+
+                if let meeting = event.meetingLink {
+                    Button {
+                        NSWorkspace.shared.open(meeting.url)
+                    } label: {
+                        Text("Partecipa")
+                            .font(.custom("Google Sans Flex 18pt", size: 11))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(joinButtonForeground(for: meeting.provider))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .background(joinButtonBackground(for: meeting.provider))
+                            .overlay(
+                                Capsule().strokeBorder(joinButtonBorder(for: meeting.provider), lineWidth: 1.4)
+                            )
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { isJoinHovered = $0 }
+                    .help("Partecipa con \(meeting.provider.rawValue)")
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+
+            if isExpanded {
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
+                    .padding(.horizontal, 14)
+
+                EventParticipationView(
+                    event: event,
+                    rsvpState: rsvpState,
+                    onRespond: onRespond,
+                    onOpenSettings: onOpenSettings,
+                    onOpenCalendar: onOpenCalendar
+                )
+                    .padding(.horizontal, 14)
+                    .padding(.top, 11)
+                    .padding(.bottom, 12)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(isHovered ? surfaceHover : surface)
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .opacity(event.hasEnded ? 0.5 : 1)
+        .onHover { isHovered = $0 }
     }
 
     private var displayLocation: String? {
@@ -3838,15 +4459,13 @@ final class NotchPanelController: NSObject {
     private let presentation = NotchPresentationState()
     private let sensorHeight: CGFloat = 6
     private let expandedWidth: CGFloat = 420
-    private let expandedHeight: CGFloat = 450
+    private let expandedHeight: CGFloat = 545
     private let animationDuration = 0.22
-    private let closeDelay = 0.25
 
     private var panel: NotchPanel?
     private var hostingView: PointingHandHostingView<CalendarNotchView>?
     private var notchScreen: NSScreen?
     private var notchRect: NSRect = .zero
-    private var closeWorkItem: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
     private var dayTimer: Timer?
     private let ipc = NotchIPCServer()
@@ -3883,7 +4502,7 @@ final class NotchPanelController: NSObject {
             Task { @MainActor in self?.model.refreshIfDayChanged() }
         }
         ipc.onShow = { [weak self] in self?.expand() }
-        ipc.onHide = { [weak self] in self?.scheduleCollapse() }
+        ipc.onHide = { [weak self] in self?.collapse() }
         ipc.onToggle = { [weak self] in self?.toggle() }
         ipc.start()
     }
@@ -3912,9 +4531,6 @@ final class NotchPanelController: NSObject {
         let rootView = CalendarNotchView(
             model: model,
             presentation: presentation,
-            onHoverChanged: { [weak self] isInside in
-                if isInside { self?.expand() } else { self?.scheduleCollapse() }
-            },
             onOpenSettings: { [weak self] preferredEmail in
                 self?.openSettings(preferredEmail: preferredEmail)
             }
@@ -3946,8 +4562,6 @@ final class NotchPanelController: NSObject {
     }
 
     private func openSettings(preferredEmail: String?) {
-        closeWorkItem?.cancel()
-        closeWorkItem = nil
         collapse()
         DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) { [weak self] in
             self?.settingsWindowController.show(preferredEmail: preferredEmail)
@@ -3955,8 +4569,6 @@ final class NotchPanelController: NSObject {
     }
 
     private func expand() {
-        closeWorkItem?.cancel()
-        closeWorkItem = nil
         guard !presentation.isExpanded else { return }
 
         model.prepareForExpansion()
@@ -3969,23 +4581,15 @@ final class NotchPanelController: NSObject {
         panel?.orderFrontRegardless()
     }
 
-    /// Click sul widget calendario della barra Swift: apre o chiude il popup
-    /// immediatamente, senza il ritardo usato per l'uscita del puntatore.
+    /// Click sul widget calendario della barra Swift: unico modo di aprire e
+    /// chiudere il popup. Il puntatore non entra in gioco: entrare o uscire
+    /// dall'area del pannello non lo apre né lo chiude.
     private func toggle() {
-        closeWorkItem?.cancel()
-        closeWorkItem = nil
         if presentation.isExpanded {
             collapse()
         } else {
             expand()
         }
-    }
-
-    private func scheduleCollapse() {
-        closeWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.collapse() }
-        closeWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + closeDelay, execute: work)
     }
 
     private func collapse() {
