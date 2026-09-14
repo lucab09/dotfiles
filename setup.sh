@@ -231,6 +231,7 @@ done
 symlink "$DOTFILES/.config/starship.toml" "$CONFIG/starship.toml"
 mkdir -p "$PI_AGENT_EXTENSIONS"
 symlink "$DOTFILES/pi/extensions/native-status-bar.ts" "$PI_AGENT_EXTENSIONS/native-status-bar.ts"
+bash "$DOTFILES/pi/install-workflow.sh" --target all
 
 echo "==> Configuring Calendar Notch OAuth..."
 install_oauth_config

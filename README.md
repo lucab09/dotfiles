@@ -11,6 +11,7 @@ Reproducible macOS configuration managed with symlinks.
 - Zed
 - Fish, Starship, Git, and personal tool configuration
 - Native pi status bar with model, context, Git changes, thinking level, and subscription limits
+- [Shared pi / Claude Code workflow](pi/README.md): Brainstorm, Plan, Build, validated worker briefs, and host-native decision selectors
 
 ## New Mac setup
 
@@ -27,7 +28,7 @@ cd ~/dotfiles
 1. checks Xcode Command Line Tools and prompts for installation when missing;
 2. installs Homebrew when needed;
 3. installs the applications, tools, and fonts from `Brewfile`;
-4. backs up existing config directories and creates symlinks into this repository, including the global pi status-bar extension;
+4. backs up existing config directories and creates symlinks into this repository, including the global pi status-bar extension, plus backed-up snapshots of the shared pi / Claude Code workflow skills and pi decision selector;
 5. configures the Calendar Notch OAuth client;
 6. compiles and signs all Swift plugins and the main Swift status bar for the current Mac;
 7. installs the `com.luca.whoop-archive` LaunchAgent that archives WHOOP data every 30 minutes;
