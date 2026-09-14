@@ -28,6 +28,94 @@ func sh(_ cmd: String) -> String {
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+private func commandOutput(_ executable: String, arguments: [String]) -> (output: String, status: Int32)? {
+    let task = Process(); let pipe = Pipe()
+    task.executableURL = URL(fileURLWithPath: executable)
+    task.arguments = arguments
+    task.standardOutput = pipe; task.standardError = Pipe()
+    do { try task.run() } catch { return nil }
+    task.waitUntilExit()
+    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    return (output.trimmingCharacters(in: .whitespacesAndNewlines), task.terminationStatus)
+}
+
+// AWS VPN Client 6 no longer updates UpLog.txt/DownLog.txt. Its bundled CLI is
+// now the authoritative interface for both connection state and control.
+private let awsVPNAppPath = "/Applications/AWS VPN Client/AWS VPN Client.app"
+private let awsVPNCLIPath = "\(awsVPNAppPath)/Contents/MacOS/aws-vpn-client"
+private let awsVPNProfileCachePath = "/tmp/sketchybar_aws_vpn_profile"
+
+private struct AWSVPNConnection {
+    let profile: String
+    let status: String
+}
+
+private func awsVPNConnections() -> [AWSVPNConnection]? {
+    guard FileManager.default.isExecutableFile(atPath: awsVPNCLIPath),
+          let result = commandOutput(awsVPNCLIPath, arguments: ["list-connections"]),
+          result.status == 0,
+          let data = result.output.data(using: .utf8),
+          let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+    return rows.compactMap { row in
+        guard let profile = row["profile-name"] as? String,
+              let status = row["connection-status"] as? String else { return nil }
+        return AWSVPNConnection(profile: profile, status: status)
+    }
+}
+
+private func legacyAWSVPNIsConnected() -> Bool {
+    let upLog = "/Library/Application Support/AWSVPNClient/UpLog.txt"
+    let downLog = "/Library/Application Support/AWSVPNClient/DownLog.txt"
+    let fm = FileManager.default
+    if let upDate = try? fm.attributesOfItem(atPath: upLog)[.modificationDate] as? Date,
+       let downDate = try? fm.attributesOfItem(atPath: downLog)[.modificationDate] as? Date {
+        return upDate > downDate
+    }
+    return fm.fileExists(atPath: upLog) && !fm.fileExists(atPath: downLog)
+}
+
+private func awsVPNIsConnected() -> Bool {
+    guard let connections = awsVPNConnections() else { return legacyAWSVPNIsConnected() }
+    if let active = connections.first(where: { $0.status.caseInsensitiveCompare("Connected") == .orderedSame }) {
+        try? active.profile.write(toFile: awsVPNProfileCachePath, atomically: true, encoding: .utf8)
+        return true
+    }
+    return false
+}
+
+private func preferredAWSVPNProfile() -> String? {
+    if let cached = try? String(contentsOfFile: awsVPNProfileCachePath, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines), !cached.isEmpty {
+        return cached
+    }
+    guard let result = commandOutput(awsVPNCLIPath, arguments: ["list-profiles"]),
+          result.status == 0,
+          let data = result.output.data(using: .utf8),
+          let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+    return rows.first?["profile-name"] as? String
+}
+
+private func setAWSVPNConnected(_ shouldConnect: Bool) {
+    guard FileManager.default.isExecutableFile(atPath: awsVPNCLIPath) else {
+        if shouldConnect {
+            sh("open -a 'AWS VPN Client' 2>/dev/null")
+        } else {
+            sh("osascript -e 'tell application \"AWS VPN Client\" to quit' 2>/dev/null")
+        }
+        return
+    }
+
+    if shouldConnect {
+        if let connections = awsVPNConnections(), !connections.isEmpty { return }
+        guard let profile = preferredAWSVPNProfile() else { return }
+        _ = commandOutput(awsVPNCLIPath, arguments: ["connect", "--profile-name", profile])
+    } else {
+        for connection in awsVPNConnections() ?? [] {
+            _ = commandOutput(awsVPNCLIPath, arguments: ["disconnect", "--profile-name", connection.profile])
+        }
+    }
+}
+
 // MARK: - SSID
 
 // macOS oscura l'SSID (`<redacted>`) a chi non ha il permesso Location
@@ -95,15 +183,7 @@ func detectNetwork() -> DetectedState {
     let nc = sh("scutil --nc list 2>/dev/null").lowercased()
     d.tailscale = nc.contains("tailscale") && nc.contains("(connected)")
     d.nord = sh("defaults read com.nordvpn.macos isAppWasConnectedToVPN 2>/dev/null") == "1"
-    let upLog   = "/Library/Application Support/AWSVPNClient/UpLog.txt"
-    let downLog = "/Library/Application Support/AWSVPNClient/DownLog.txt"
-    let fm = FileManager.default
-    if let upDate = try? fm.attributesOfItem(atPath: upLog)[.modificationDate] as? Date,
-       let dnDate = try? fm.attributesOfItem(atPath: downLog)[.modificationDate] as? Date {
-        d.aws = upDate > dnDate
-    } else {
-        d.aws = fm.fileExists(atPath: upLog) && !fm.fileExists(atPath: downLog)
-    }
+    d.aws = awsVPNIsConnected()
     return d
 }
 
@@ -195,14 +275,18 @@ struct NetworkPopupView: View {
         ) {
             connectionRow(
                 icon: "shield.lefthalf.filled",
-                appIconPath: "/Applications/AWS VPN Client/AWS VPN Client.app/Contents/Resources/AppIcon.icns",
+                // Resolve the icon from the bundle so AWS can rename the .icns
+                // resource again without breaking this row.
+                appIconPath: awsVPNAppPath,
                 title: "AWS VPN",
                 active: state.awsActive,
                 toggleState: Binding(
                     get: { state.awsActive },
                     set: { enabled in
                         state.awsActive = enabled
-                        setApplicationRunning(enabled, named: "AWS VPN Client")
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            setAWSVPNConnected(enabled)
+                        }
                     }
                 )
             )
@@ -249,7 +333,7 @@ struct NetworkPopupView: View {
             iconTint: active ? cGreen : CardTheme.secondaryText,
             title: title,
             toggleState: toggleState,
-            toggleAccessibilityLabel: "Attiva o chiudi \(title)"
+            toggleAccessibilityLabel: "Connetti o disconnetti \(title)"
         )
     }
 
@@ -286,6 +370,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var anchorX: CGFloat?
     let state = NetworkState()
     let ipc = IPCServer()
+    private var refreshInProgress = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
         ipc.onToggle = { [weak self] x in self?.toggle(anchorX: x) }
@@ -301,10 +386,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func refresh() {
-        let d = detectNetwork()
-        state.ssid = d.ssid; state.wifiEnabled = d.wifi
-        state.tailscaleActive = d.tailscale; state.nordActive = d.nord
-        state.awsActive = d.aws
+        guard !refreshInProgress else { return }
+        refreshInProgress = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let d = detectNetwork()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.state.ssid = d.ssid; self.state.wifiEnabled = d.wifi
+                self.state.tailscaleActive = d.tailscale; self.state.nordActive = d.nord
+                self.state.awsActive = d.aws
+                self.refreshInProgress = false
+            }
+        }
     }
 
     func buildPanel() {

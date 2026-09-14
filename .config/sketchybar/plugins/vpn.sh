@@ -60,12 +60,22 @@ NORD_CONNECTED=$(defaults read com.nordvpn.macos isAppWasConnectedToVPN 2>/dev/n
 
 # --- AWS VPN Client ---
 AWS_ACTIVE=0
-UPLOG="/Library/Application Support/AWSVPNClient/UpLog.txt"
-DOWNLOG="/Library/Application Support/AWSVPNClient/DownLog.txt"
-if [ -f "$UPLOG" ] && [ -f "$DOWNLOG" ] && [ "$UPLOG" -nt "$DOWNLOG" ]; then
-  AWS_ACTIVE=1
-elif [ -f "$UPLOG" ] && [ ! -f "$DOWNLOG" ]; then
-  AWS_ACTIVE=1
+AWS_CLI="/Applications/AWS VPN Client/AWS VPN Client.app/Contents/MacOS/aws-vpn-client"
+if [ -x "$AWS_CLI" ]; then
+  # AWS VPN Client 6 exposes authoritative JSON state through its bundled CLI
+  # and no longer updates the legacy UpLog.txt/DownLog.txt files.
+  if "$AWS_CLI" list-connections 2>/dev/null \
+      | grep -Eq '"connection-status"[[:space:]]*:[[:space:]]*"Connected"'; then
+    AWS_ACTIVE=1
+  fi
+else
+  UPLOG="/Library/Application Support/AWSVPNClient/UpLog.txt"
+  DOWNLOG="/Library/Application Support/AWSVPNClient/DownLog.txt"
+  if [ -f "$UPLOG" ] && [ -f "$DOWNLOG" ] && [ "$UPLOG" -nt "$DOWNLOG" ]; then
+    AWS_ACTIVE=1
+  elif [ -f "$UPLOG" ] && [ ! -f "$DOWNLOG" ]; then
+    AWS_ACTIVE=1
+  fi
 fi
 
 # Push state to network popup
