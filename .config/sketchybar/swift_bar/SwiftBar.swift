@@ -966,14 +966,19 @@ private struct BarCircle<Content: View>: View {
     }
 }
 
-private struct WiFiCircleWidget: View {
+/// Wi-Fi nel contenitore del design system: solo le tacche, colorate per
+/// qualità del segnale. Il nome della rete sta nel popup.
+private struct WiFiWidget: View {
     let signalLevel: Int
 
     var body: some View {
-        BarCircle {
+        BarContainer {
             WiFiSignalIcon(signalLevel: signalLevel)
-                .frame(width: 18, height: 18)
+                .frame(width: BarLayout.iconSize, height: BarLayout.iconSize)
         }
+        .contentShape(RoundedRectangle(cornerRadius: BarLayout.containerRadius, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(signalLevel == 0 ? "Wi-Fi non connesso" : "Segnale Wi-Fi livello \(signalLevel) di 3")
     }
 }
 
@@ -1281,10 +1286,10 @@ private struct WiFiSignalIcon: View {
 
     private var statusColor: Color {
         switch signalLevel {
-        case 3: return Color(red: 0.65, green: 0.89, blue: 0.63)
-        case 2: return Color(red: 0.98, green: 0.89, blue: 0.69)
-        case 1: return Color(red: 0.95, green: 0.55, blue: 0.66)
-        default: return Color(red: 0.79, green: 0.77, blue: 0.81)
+        case 3: return BarTheme.Status.good
+        case 2: return BarTheme.Status.warning
+        case 1: return BarTheme.Status.critical
+        default: return BarTheme.Status.neutral
         }
     }
 
@@ -1320,7 +1325,6 @@ private struct WiFiSignalIcon: View {
                 )
             }
         }
-        .accessibilityLabel(signalLevel == 0 ? "Wi-Fi non connesso" : "Segnale Wi-Fi livello \(signalLevel) di 3")
     }
 }
 
@@ -1634,7 +1638,7 @@ private struct BatteryBarView: View {
             BatteryWidget(model: batteryModel)
 
             Button(action: onWiFiClick) {
-                WiFiCircleWidget(signalLevel: wifiModel.signalLevel)
+                WiFiWidget(signalLevel: wifiModel.signalLevel)
             }
             .buttonStyle(.plain)
 
