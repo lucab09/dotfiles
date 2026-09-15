@@ -29,6 +29,17 @@ enum BarTheme {
         static let critical = Color(red: 0.95, green: 0.55, blue: 0.66)
         static let neutral = Color(red: 0.79, green: 0.77, blue: 0.81)
     }
+
+    /// Colori delle condizioni meteo, nella stessa gamma pastello degli
+    /// stati. Come quelli, solo per le icone.
+    enum Weather {
+        static let sun = Color(red: 0.98, green: 0.89, blue: 0.69)
+        static let night = Color(red: 0.71, green: 0.75, blue: 1.00)
+        static let rain = Color(red: 0.45, green: 0.78, blue: 0.93)
+        static let snow = Color(red: 0.54, green: 0.86, blue: 0.92)
+        static let storm = Color(red: 0.80, green: 0.65, blue: 0.97)
+        static let cloud = Status.neutral
+    }
 }
 
 enum BarTypography {

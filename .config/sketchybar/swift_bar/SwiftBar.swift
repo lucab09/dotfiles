@@ -555,66 +555,6 @@ private final class WeatherStatusModel: ObservableObject {
     }
 }
 
-private struct WeatherStatusWidget: View {
-    @ObservedObject var model: WeatherStatusModel
-    private let textColor = Color(red: 0.79, green: 0.77, blue: 0.81)
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbolName)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(conditionColor)
-                .frame(width: 18, height: 20)
-
-            Text(temperatureLabel)
-                .font(Metrics.barLabel)
-                .monospacedDigit()
-                .foregroundStyle(textColor)
-
-            Text(model.city)
-                .font(Metrics.barLabel)
-                .foregroundStyle(textColor)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Meteo, \(temperatureLabel), \(model.city)")
-    }
-
-    private var temperatureLabel: String {
-        guard let temperature = model.temperature else { return "--°" }
-        return "\(Int(temperature.rounded()))°"
-    }
-
-    private var symbolName: String {
-        switch model.icon {
-        case "sunny": return "sun.max"
-        case "partly_cloudy_day": return "cloud.sun"
-        case "bedtime": return "moon.stars"
-        case "partly_cloudy_night": return "cloud.moon"
-        case "rainy", "weather_mix": return "cloud.rain"
-        case "weather_snowy", "cloudy_snowing": return "cloud.snow"
-        case "foggy": return "cloud.fog"
-        case "thunderstorm": return "cloud.bolt.rain"
-        default: return "cloud"
-        }
-    }
-
-    private var conditionColor: Color {
-        switch model.icon {
-        case "sunny": return Color(red: 1.00, green: 0.80, blue: 0.30)
-        case "partly_cloudy_day": return Color(red: 1.00, green: 0.82, blue: 0.40)
-        case "bedtime", "partly_cloudy_night": return Color(red: 0.72, green: 0.76, blue: 1.00)
-        case "rainy", "weather_mix": return Color(red: 0.50, green: 0.87, blue: 1.00)
-        case "weather_snowy", "cloudy_snowing": return Color(red: 0.73, green: 0.92, blue: 1.00)
-        case "thunderstorm": return Color(red: 0.75, green: 0.57, blue: 1.00)
-        default: return textColor
-        }
-    }
-}
-
 private struct HealthPayload: Decodable {
     struct Sleep: Decodable {
         let performance: Int?
@@ -1026,23 +966,6 @@ private struct BarCircle<Content: View>: View {
     }
 }
 
-/// Cerchio con didascalia sotto: in colonna il valore che in orizzontale
-/// stava a fianco dell'icona (percentuale, temperatura) va a capo.
-private struct CaptionedCircle<Badge: View, Caption: View>: View {
-    @ViewBuilder let circle: () -> Badge
-    @ViewBuilder let caption: () -> Caption
-
-    var body: some View {
-        VStack(spacing: 4) {
-            circle()
-            caption()
-                .font(Metrics.caption)
-                .monospacedDigit()
-                .lineLimit(1)
-        }
-    }
-}
-
 private struct WiFiCircleWidget: View {
     let signalLevel: Int
 
@@ -1117,23 +1040,22 @@ private struct BatteryWidget: View {
     }
 }
 
-/// In colonna non c'è spazio per allargare la capsula all'hover: la
-/// temperatura sta fissa sotto il cerchio e la città nel tooltip.
-private struct WeatherCircleWidget: View {
+/// Meteo nel contenitore del design system, come la batteria: icona della
+/// condizione (colorata) e sotto la temperatura; la città sta nel tooltip.
+private struct WeatherWidget: View {
     @ObservedObject var model: WeatherStatusModel
 
     var body: some View {
-        CaptionedCircle {
-            BarCircle(tint: conditionColor) {
-                Image(systemName: symbolName)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 18, height: 18)
-            }
-        } caption: {
+        BarContainer(spacing: BarLayout.itemSpacing) {
+            Image(systemName: symbolName)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(conditionColor)
+                .frame(width: BarLayout.iconSize, height: BarLayout.iconSize)
+
             Text(temperatureLabel)
-                .foregroundStyle(.white.opacity(0.88))
+                .barText(.body)
         }
+        .contentShape(RoundedRectangle(cornerRadius: BarLayout.containerRadius, style: .continuous))
         .help(model.city == "--" ? temperatureLabel : "\(temperatureLabel) \(model.city)")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Meteo, \(temperatureLabel), \(model.city)")
@@ -1159,13 +1081,12 @@ private struct WeatherCircleWidget: View {
 
     private var conditionColor: Color {
         switch model.icon {
-        case "sunny": return Color(red: 1.00, green: 0.80, blue: 0.30)
-        case "partly_cloudy_day": return Color(red: 1.00, green: 0.82, blue: 0.40)
-        case "bedtime", "partly_cloudy_night": return Color(red: 0.72, green: 0.76, blue: 1.00)
-        case "rainy", "weather_mix": return Color(red: 0.50, green: 0.87, blue: 1.00)
-        case "weather_snowy", "cloudy_snowing": return Color(red: 0.73, green: 0.92, blue: 1.00)
-        case "thunderstorm": return Color(red: 0.75, green: 0.57, blue: 1.00)
-        default: return Color(white: 0.40)
+        case "sunny", "partly_cloudy_day": return BarTheme.Weather.sun
+        case "bedtime", "partly_cloudy_night": return BarTheme.Weather.night
+        case "rainy", "weather_mix": return BarTheme.Weather.rain
+        case "weather_snowy", "cloudy_snowing": return BarTheme.Weather.snow
+        case "thunderstorm": return BarTheme.Weather.storm
+        default: return BarTheme.Weather.cloud
         }
     }
 }
@@ -1706,7 +1627,7 @@ private struct BatteryBarView: View {
             Spacer(minLength: Metrics.sectionSpacing)
 
             Button(action: onWeatherClick) {
-                WeatherCircleWidget(model: weatherModel)
+                WeatherWidget(model: weatherModel)
             }
             .buttonStyle(.plain)
 
