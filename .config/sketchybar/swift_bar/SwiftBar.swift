@@ -1328,8 +1328,22 @@ private struct WiFiSignalIcon: View {
     }
 }
 
+/// Compute nel contenitore del design system: solo l'icona del chip, i
+/// valori di CPU, GPU, RAM e disco stanno nel popup.
+private struct ComputeWidget: View {
+    var body: some View {
+        BarContainer {
+            ComputeIcon()
+                .frame(width: BarLayout.iconSize, height: BarLayout.iconSize)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: BarLayout.containerRadius, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Stato compute")
+    }
+}
+
 private struct ComputeIcon: View {
-    private let color = Color(red: 0.79, green: 0.77, blue: 0.81)
+    private let color = BarTheme.Status.neutral
 
     var body: some View {
         Canvas { context, size in
@@ -1407,7 +1421,6 @@ private struct ComputeIcon: View {
             }
             context.stroke(pinPath, with: .color(color), style: stroke)
         }
-        .accessibilityLabel("Stato compute")
     }
 }
 
@@ -1643,10 +1656,7 @@ private struct BatteryBarView: View {
             .buttonStyle(.plain)
 
             Button(action: onComputeClick) {
-                BarCircle {
-                    ComputeIcon()
-                        .frame(width: 18, height: 18)
-                }
+                ComputeWidget()
             }
             .buttonStyle(.plain)
         }
